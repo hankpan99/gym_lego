@@ -26,21 +26,36 @@ class LegoEnv(gym.Env):
 
     def __init__(self):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) = 51
-        self.action_space = gym.spaces.box.Box(
-            low=np.array([-1]*2+[0]+[-np.pi]*48),
-            high=np.array([1]*2+[1]+[np.pi]*48))
+        self.action_space = gym.spaces.box.Box(low=np.array([-1]*2+[0]+[-np.pi]*48),
+                                                high=np.array([1]*2+[1]+[np.pi]*48))
 
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
         # 6D pose of the object(6) + velocity of the wrist pose(6) + velocity of the object pose(6)
-        self.observation_space = gym.spaces.box.Box(
-            low=np.array([-1]*2+[0]+[-np.pi]*48+[-1]*3+[-np.pi]*3),
-            high=np.array([1]*2+[1]+[np.pi]*48+[1]*3+[np.pi]*3))
+        self.observation_space = gym.spaces.box.Box(low=np.array([-1]*2+[0]+[-np.pi]*48+[-1]*3+[-np.pi]*3),
+                                                    high=np.array([1]*2+[1]+[np.pi]*48+[1]*3+[np.pi]*3))
 
-        self.obj_mass = 0.2
-
+        # connect to pybullet
         pb.connect(pb.GUI)
-        pb.setTimeStep(1/60)
+        pb.setTimeStep(1 / 60)
+        # pb.resetSimulation()
+        pb.setAdditionalSearchPath(pybullet_data.getDataPath())
+        pb.setGravity(0, 0, -9.8)
+
+        # set plane and table
+        # pb.loadURDF("table/table.urdf", basePosition=[0, 0, 0])
+        self.plane_id = pb.loadURDF("plane.urdf")
+
+        # add mano urdf
+        self.mano_id = pb.loadURDF("/manoUrdf/Leo/mano.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
+        self.available_joints_indexes = [i for i in range(pb.getNumJoints(self.mano_id)) if pb.getJointInfo(self.mano_id, i)[2] != pb.JOINT_FIXED]
+        for idx in self.available_joints_indexes:
+            pb.resetJointState(self.mano_id, idx, 0)
+            pb.enableJointForceTorqueSensor(self.mano_id, idx, True)
+        
+        # add object and set object mass
+        self.obj_mass = 0.2
+        self.objId = self.addObject()
 
 
     def step(self, action):
@@ -48,37 +63,30 @@ class LegoEnv(gym.Env):
         # for i in range(len(self.available_joints_indexes)):
         #     pb.resetJointState(self.mano_id, self.available_joints_indexes[i], action[i])
 
-        pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
-                                    jointIndices=self.available_joints_indexes,
-                                    controlMode=pb.POSITION_CONTROL,
-                                    targetPositions=action,
-                                    forces=[100]*51)
+        # pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
+        #                             jointIndices=self.available_joints_indexes,
+        #                             controlMode=pb.POSITION_CONTROL,
+        #                             targetPositions=action,
+        #                             forces=[100]*51)
 
         pb.stepSimulation()
         time.sleep(1/60)
-        self.cnt += 1
+        
         if self.cnt == 100:
             done = True
         else:
+            self.cnt += 1
             done = False
-        obs=self.getObservation()
-        reward=self.getReward(obs)
-        obs=np.zeros(57, dtype=np.float32)
         
-        return obs,reward,done,{}
+        obs = self.getObservation()
+        reward = self.getReward(obs)
+        obs = np.zeros(57, dtype=np.float32)
+        
+        return obs, reward, done, {}
 
 
     def reset(self):
         self.cnt = 0
-
-        # connect to pybullet
-        pb.resetSimulation()
-        pb.setAdditionalSearchPath(pybullet_data.getDataPath())
-        pb.setGravity(0, 0, -9.8)
-
-        # set plane and table
-        # pb.loadURDF("table/table.urdf", basePosition=[0, 0, 0])
-        self.plane_id = pb.loadURDF("plane.urdf")
 
         # read training data
         with(open("./dgrasp_data.pickle", "rb")) as openfile:
@@ -93,15 +101,12 @@ class LegoEnv(gym.Env):
         # self.hand_ref_position = train_data["subgoal_1"]["hand_ref_position"]
         # self.hand_contact = train_data["subgoal_1"]["hand_contact"]
 
-        # add mano urdf
-        self.mano_id = pb.loadURDF("/manoUrdf/Leo/mano.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
-        self.available_joints_indexes = [i for i in range(pb.getNumJoints(self.mano_id)) if pb.getJointInfo(self.mano_id, i)[2] != pb.JOINT_FIXED]
-        for i in range(len(self.available_joints_indexes)):
-            pb.resetJointState(self.mano_id, self.available_joints_indexes[i],0)
-            pb.enableJointForceTorqueSensor(self.mano_id, self.available_joints_indexes[i],True)
-        
-        # add object meshes
-        self.objId = self.addObject()
+        # add objects and reset poses
+        pb.resetBasePositionAndOrientation(self.objId, self.obj_init[:3], self.obj_init[3:])
+
+        # reset hand pose
+        for cnt, idx in enumerate(self.available_joints_indexes):
+            pb.resetJointState(self.mano_id, idx, self.hand_traj_reach[0, 0, cnt])
         
         # set goals
         self.set_goals(train_data)
@@ -265,9 +270,9 @@ class LegoEnv(gym.Env):
 
         # rq = np.linalg.norm(obs[3:51] - self.hand_ref_pose)
 
-        have_force_mask = (obs[115:] > 0)
-        rc1 = np.dot(self.hand_contact, have_force_mask) / np.dot(self.hand_contact, self.hand_contact)
-        rc2 = min(np.dot(self.hand_contact, obs[115:]), 1 * self.obj_mass)
+        # have_force_mask = (obs[115:] > 0)
+        # rc1 = np.dot(self.hand_contact, have_force_mask) / np.dot(self.hand_contact, self.hand_contact)
+        # rc2 = min(np.dot(self.hand_contact, obs[115:]), 1 * self.obj_mass)
 
         # rreg1=
 
@@ -287,6 +292,6 @@ class LegoEnv(gym.Env):
             self.obj_mass,
             baseCollisionShapeIndex=collisionShapeId,
             baseVisualShapeIndex=visualShapeId,
-            basePosition=self.obj_init[:3],
-            baseOrientation=self.obj_init[3:]
+            basePosition=[0, 0, 0],
+            baseOrientation=[0, 0, 0, 1]
         )

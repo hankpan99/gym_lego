@@ -1,5 +1,6 @@
 from stable_baselines3.common.env_checker import check_env
 from lego_env import LegoEnv
+import numpy as np
 
 env=LegoEnv()
 check_env(env)
