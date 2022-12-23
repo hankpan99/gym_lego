@@ -101,12 +101,16 @@ class LegoEnv(gym.Env):
         # self.hand_ref_position = train_data["subgoal_1"]["hand_ref_position"]
         # self.hand_contact = train_data["subgoal_1"]["hand_contact"]
 
-        # add objects and reset poses
+        # set initial object pose
         pb.resetBasePositionAndOrientation(self.objId, self.obj_init[:3], self.obj_init[3:])
 
-        # reset hand pose
+        # set initial hand pose
+        init_state = self.hand_traj_reach[0, 0]
+        self.init_rot_ = Rot.from_euler('zxy', init_state[3:6]).as_matrix()
+        self.init_or_ = np.transpose(self.init_rot_)
+
         for cnt, idx in enumerate(self.available_joints_indexes):
-            pb.resetJointState(self.mano_id, idx, self.hand_traj_reach[0, 0, cnt])
+            pb.resetJointState(self.mano_id, idx, init_state[cnt])
         
         # set goals
         self.set_goals(train_data)
@@ -128,9 +132,9 @@ class LegoEnv(gym.Env):
         self.final_obj_pos_ = obj_goal_pos
 
         # convert object and handpose pose to rotation matrix format
-        Obj_orientation_temp = Rot.from_quat(obj_goal_pos[3:]).as_matrix()
+        self.Obj_orientation_temp = Rot.from_quat(obj_goal_pos[3:]).as_matrix()
         quat_obj_init = obj_goal_pos[3:]
-        Obj_orientation = np.transpose(Obj_orientation_temp)
+        Obj_orientation = np.transpose(self.Obj_orientation_temp)
 
         quat_goal_hand_w = Rot.from_euler('zxy', goal_pose[:3]).as_quat()
         root_pose_world_ = Rot.from_quat(quat_goal_hand_w).as_matrix()
@@ -246,14 +250,15 @@ class LegoEnv(gym.Env):
         rel_obj_qvel = np.transpose(wrist_orientation) * j_vel[54] # relative object angular velocity
         final_obj_pose_mat = Rot.from_quat(self.final_obj_pos_[3:]).as_matrix()
 
-        '''
-        raisim::matmul(init_or_, final_obj_pose_mat, final_obj_wrist); # target object orientation in initial wrist frame
-        raisim::matmul(init_or_, Obj_orientation_temp, obj_wrist); # current object orientation in initial wrist frame
-        raisim::transpose(obj_wrist, obj_wrist_trans);
+        final_obj_wrist = self.init_or_ @ final_obj_pose_mat # target object orientation in initial wrist frame
+        obj_wrist = self.init_or_ @ self.Obj_orientation_temp # current object orientation in initial wrist frame
+        obj_wrist_trans = np.transpose(obj_wrist)
 
-        raisim::matmul(final_obj_wrist, obj_wrist_trans, diff_obj_pose_mat); # distance between current obj and target obj pose
-        raisim::RotmatToEuler(diff_obj_pose_mat,rel_obj_pose_r3); # convert to Euler
-        rel_obj_pose_ = rel_obj_pose_r3.e();
+        diff_obj_pose_mat = final_obj_wrist @ obj_wrist_trans # distance between current obj and target obj pose
+        rel_obj_pose_r3 = Rot.from_matrix(diff_obj_pose_mat).as_euler('zxy') # convert to Euler
+        rel_obj_pose_ = rel_obj_pose_r3
+
+        '''
         '''
 
         obs = np.hstack((j, j_vel, f))
