@@ -2,6 +2,7 @@ from stable_baselines3 import PPO
 import os
 import time
 from lego_env import LegoEnv
+import torch
 
 models_dir = f"models/{int(time.time())}/"
 logdir = f"logs/{int(time.time())}/"
@@ -11,6 +12,9 @@ if not os.path.exists(models_dir):
 
 if not os.path.exists(logdir):
 	os.makedirs(logdir)
+
+device = 'cuda' if torch.cuda.is_available() else 'cpu'
+print('using device', device)
 
 env=LegoEnv()
 env.reset()

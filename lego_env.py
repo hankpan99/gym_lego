@@ -32,11 +32,11 @@ class LegoEnv(gym.Env):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
         # 6D pose of the object(6) + velocity of the wrist pose(6) + velocity of the object pose(6)
-        self.observation_space = gym.spaces.box.Box(low=np.array([-1]*2+[0]+[-np.pi]*48+[-1]*3+[-np.pi]*3),
-                                                    high=np.array([1]*2+[1]+[np.pi]*48+[1]*3+[np.pi]*3))
+        self.observation_space = gym.spaces.box.Box(low=np.array([-100]*225),
+                                                    high=np.array([100]*225))
 
         # connect to pybullet
-        pb.connect(pb.GUI)
+        pb.connect(pb.DIRECT)
         pb.setTimeStep(1 / 60)
         # pb.resetSimulation()
         pb.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -52,6 +52,11 @@ class LegoEnv(gym.Env):
         for idx in self.available_joints_indexes:
             pb.resetJointState(self.mano_id, idx, 0)
             pb.enableJointForceTorqueSensor(self.mano_id, idx, True)
+        self.linkToJointList = [6,  9,  12, 15,
+                                18, 21, 24,
+                                27, 30, 33,
+                                36, 39, 42,
+                                45, 48, 51]
         
         # add object and set object mass
         self.obj_mass = 0.2
@@ -63,24 +68,22 @@ class LegoEnv(gym.Env):
         # for i in range(len(self.available_joints_indexes)):
         #     pb.resetJointState(self.mano_id, self.available_joints_indexes[i], action[i])
 
-        # pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
-        #                             jointIndices=self.available_joints_indexes,
-        #                             controlMode=pb.POSITION_CONTROL,
-        #                             targetPositions=action,
-        #                             forces=[100]*51)
+        pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
+                                    jointIndices=self.available_joints_indexes,
+                                    controlMode=pb.POSITION_CONTROL,
+                                    targetPositions=action,
+                                    forces=[100]*51)
 
         pb.stepSimulation()
         time.sleep(1/60)
         
-        if self.cnt == 100:
+        if self.cnt == 1000:
             done = True
         else:
             self.cnt += 1
             done = False
-        
         obs = self.getObservation()
         reward = self.getReward(obs)
-        obs = np.zeros(57, dtype=np.float32)
         
         return obs, reward, done, {}
 
@@ -117,8 +120,6 @@ class LegoEnv(gym.Env):
 
         # get observation
         obs = self.getObservation()
-        obs = np.zeros(57, dtype=np.float32)
-
         return obs
     
 
@@ -132,9 +133,9 @@ class LegoEnv(gym.Env):
         self.final_obj_pos_ = obj_goal_pos
 
         # convert object and handpose pose to rotation matrix format
-        self.Obj_orientation_temp = Rot.from_quat(obj_goal_pos[3:]).as_matrix()
+        Obj_orientation_temp = Rot.from_quat(obj_goal_pos[3:]).as_matrix()
         quat_obj_init = obj_goal_pos[3:]
-        Obj_orientation = np.transpose(self.Obj_orientation_temp)
+        Obj_orientation = np.transpose(Obj_orientation_temp)
 
         quat_goal_hand_w = Rot.from_euler('zxy', goal_pose[:3]).as_quat()
         root_pose_world_ = Rot.from_quat(quat_goal_hand_w).as_matrix()
@@ -150,11 +151,12 @@ class LegoEnv(gym.Env):
         # Compute and convert hand 3D joint positions into object relative frame
         tmp_rel_pos = ee_goal_pos - np.tile(self.final_obj_pos_[:3], (16, 1))
         self.final_ee_pos_ = Obj_orientation @ np.transpose(tmp_rel_pos)
-        self.final_ee_pos_ = np.transpose(self.final_ee_pos_).reshape(48)
+        self.final_ee_pos_ = np.transpose(self.final_ee_pos_)
 
         # Intialize and set goal contact array
-        self.num_active_contacts_ = np.sum(goal_contacts)
+        num_active_contacts_ = np.sum(goal_contacts)
         self.final_contact_array_ = goal_contacts
+        self.k_contact = 1.0 / num_active_contacts_
 
 
     def render(self, mode='human'):
@@ -193,6 +195,14 @@ class LegoEnv(gym.Env):
             joint_state = np.array(pb.getJointState(self.mano_id,self.available_joints_indexes[i]))[:2]
             j[i] = joint_state[0]
             j_vel[i] = joint_state[1]
+        
+        # get hand joint position
+        position_list = []
+        for cnt, joint in enumerate(self.linkToJointList):
+            linkState = pb.getLinkState(self.mano_id, joint)
+            position = np.array(linkState[0])
+            position_list.append(position)
+        j_pos = np.array(position_list, dtype=np.float32).reshape(48)
 
         # get obj pose and vel
         obj_pose = pb.getBasePositionAndOrientation(self.objId)
@@ -203,30 +213,23 @@ class LegoEnv(gym.Env):
         j[51:] = obj_pose
         j_vel[51:] = obj_vel
 
-        # get forces on links
-        f = np.zeros(16)
-        linkList = [6,  9,  12, 15,
-                    18, 21, 24,
-                    27, 30, 33,
-                    36, 39, 42,
-                    45, 48, 51]
-        for cnt, l in enumerate(linkList):
-            if len(pb.getContactPoints(bodyA=self.mano_id,bodyB=self.objId,linkIndexA=l)):
-                contact=pb.getContactPoints(bodyA=self.mano_id,bodyB=self.objId,linkIndexA=l)
-                force=np.zeros(3)
-                for c in contact:
-                    contact_normal=np.array(c[7])
-                    contact_force=np.array(c[9])
-                    force+=contact_force*contact_normal
-                f[cnt]=np.linalg.norm(force)
-
         # feature extraction layers
-        wrist_position = j[:3]
-        wrist_orientation = Rot.from_euler('zyx', j[3:6]).as_matrix()
+        wrist_position = j_pos[:3]
+        wrist_orientation = Rot.from_euler('zyx', j_pos[3:6]).as_matrix()
         wrist_orientation_transpose = np.transpose(wrist_orientation)
 
         obj_position = j[51:54]
-        obj_orienttion = Rot.from_quat(j[54:]).as_matrix()
+        Obj_orientation_temp = Rot.from_quat(j[54:]).as_matrix()
+        Obj_orientation = np.transpose(Obj_orientation_temp)
+
+        # compute relative hand pose
+        self.rel_pose_ = self.final_pose_ - j_pos
+
+        # compute object pose in wrist frame
+        palm_world_pose_mat = wrist_orientation
+        palm_world_pose_mat_trans = np.transpose(palm_world_pose_mat)
+        obj_pose_wrist_mat = palm_world_pose_mat_trans @ Obj_orientation_temp
+        obj_pose_ = Rot.from_matrix(obj_pose_wrist_mat).as_euler('zxy')
 
         # relative position between object and wrist in wrist coordinates
         rel_objpalm = wrist_position - obj_position
@@ -234,34 +237,73 @@ class LegoEnv(gym.Env):
 
         # object displacement from initial position in wrist coordinates
         rel_obj_init = self.obj_init[:3] - obj_position
-        rel_obj_pos_ = np.transpose(wrist_orientation) @ rel_obj_init
+        self.rel_obj_pos_ = np.transpose(wrist_orientation) @ rel_obj_init
 
         # current global wirst pose in object relative frame
-        rot_mult = obj_orienttion @ wrist_orientation
+        rot_mult = Obj_orientation @ wrist_orientation
         euler_hand = Rot.from_matrix(rot_mult).as_euler('zyx')
 
         # difference between target and current global wrist pose
-        self.rel_pose_ = self.final_pose_[:3] = euler_hand
+        self.rel_pose_ = self.final_pose_[:3] - euler_hand
 
-        bodyLinearVel_ = j_vel[:3]
-        bodyAngularVel_ = j_vel[3:6]
+        self.bodyLinearVel_ = j_vel[:3]
+        self.bodyAngularVel_ = j_vel[3:6]
 
-        rel_obj_vel = np.transpose(wrist_orientation) * j_vel[51:54] # relative object velocity
+        self.rel_obj_vel = np.transpose(wrist_orientation) * j_vel[51:54] # relative object velocity
         rel_obj_qvel = np.transpose(wrist_orientation) * j_vel[54] # relative object angular velocity
         final_obj_pose_mat = Rot.from_quat(self.final_obj_pos_[3:]).as_matrix()
 
         final_obj_wrist = self.init_or_ @ final_obj_pose_mat # target object orientation in initial wrist frame
-        obj_wrist = self.init_or_ @ self.Obj_orientation_temp # current object orientation in initial wrist frame
+        obj_wrist = self.init_or_ @ Obj_orientation_temp # current object orientation in initial wrist frame
         obj_wrist_trans = np.transpose(obj_wrist)
 
         diff_obj_pose_mat = final_obj_wrist @ obj_wrist_trans # distance between current obj and target obj pose
         rel_obj_pose_r3 = Rot.from_matrix(diff_obj_pose_mat).as_euler('zxy') # convert to Euler
         rel_obj_pose_ = rel_obj_pose_r3
 
-        '''
-        '''
+        # Compute relative 3D position features for all hand joints
+        tmp_rel_pos = j_pos.reshape(16, 3) - np.tile(obj_position, (16, 1))
+        Rel_fpos = Obj_orientation @ np.transpose(tmp_rel_pos)
+        Rel_fpos = np.transpose(Rel_fpos) # compute current relative pose in object coordinates
 
-        obs = np.hstack((j, j_vel, f))
+        obj_frame_diff = self.final_ee_pos_ - Rel_fpos # distance between target 3D positions and current 3D positions in object frame
+        obj_frame_diff_w = Obj_orientation @ np.transpose(obj_frame_diff) # convert distances to world frame
+        obj_frame_diff_w = np.transpose(obj_frame_diff_w)
+
+        obj_frame_diff_h = wrist_orientation_transpose @ np.transpose(obj_frame_diff_w)
+        obj_frame_diff_h = np.transpose(obj_frame_diff_h) # convert distances to wrist frame
+        self.rel_body_pos_ = obj_frame_diff_h.reshape(48)
+
+        # compute current contacts of hand parts and the contact force
+        self.impulses_ = np.zeros(16)
+        for cnt, l in enumerate(self.linkToJointList):
+            if len(pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)):
+                contact = pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)
+                force = np.zeros(3)
+                for c in contact:
+                    contact_normal = np.array(c[7])
+                    contact_force = np.array(c[9])
+                    force += (contact_force * contact_normal)
+                self.impulses_[cnt] = np.linalg.norm(force)
+        
+        # compute relative target contact vector, i.e., which goal contacts are currently in contact
+        self.rel_contacts_ = self.final_contact_array_ * (self.impulses_ > 0)
+
+        # add all features to observation
+        obs = np.hstack([j[:51],
+                        self.bodyLinearVel_,
+                        self.bodyAngularVel_,
+                        j_vel[6:51],
+                        self.rel_body_pos_,
+                        self.rel_pose_,
+                        rel_objpalm_pos,
+                        self.rel_obj_vel.reshape(9),
+                        rel_obj_qvel.reshape(9),
+                        self.final_contact_array_,
+                        self.impulses_,
+                        self.rel_contacts_,
+                        self.rel_obj_pos_]).astype(np.float32)
+        
         return obs
 
 
@@ -269,19 +311,29 @@ class LegoEnv(gym.Env):
         # 6D pose of the wrist(6) + joint angles(45)+ 6D pose of the object(6) + 
         # velocity of the wrist pose(6) + joint angular velocities(45) + velocity of the object pose(6)+
         # each joint forces exceeded on object(21)
-        r = 0
+        
+        # Compute general reward terms
+        pose_reward_ = -np.linalg.norm(self.rel_pose_)
+        pos_reward_ = -np.linalg.norm(self.rel_body_pos_) ** 2 # without finger_weights
 
-        # rx=
+        # Compute regularization rewards
+        rel_obj_reward_ = np.linalg.norm(self.rel_obj_vel) ** 2
+        body_vel_reward_ = np.linalg.norm(self.bodyLinearVel_) ** 2
+        body_qvel_reward_ = np.linalg.norm(self.bodyAngularVel_) ** 2
+        contact_reward_ = self.k_contact * np.sum(self.rel_contacts_)
+        impulse_reward_ = np.sum(self.final_contact_array_ * self.impulses_)
 
-        # rq = np.linalg.norm(obs[3:51] - self.hand_ref_pose)
+        # Store all rewards
+        rewards = 0
+        rewards += 2.0 * max(-10.0, pos_reward_) # pos_reward
+        rewards += 0.1 * max(-10.0, pose_reward_) # pose_reward
+        rewards += 1.0 * max(-10.0, contact_reward_) # contact_reward
+        rewards += 2.0 * min(impulse_reward_, self.obj_mass * 5)# impulse_reward
+        rewards += -1.0 * max(0.0, rel_obj_reward_)# rel_obj_reward_
+        rewards += -0.5 * max(0.0,body_vel_reward_)# body_vel_reward_
+        rewards += -0.5 * max(0.0,body_qvel_reward_)# body_qvel_reward_
 
-        # have_force_mask = (obs[115:] > 0)
-        # rc1 = np.dot(self.hand_contact, have_force_mask) / np.dot(self.hand_contact, self.hand_contact)
-        # rc2 = min(np.dot(self.hand_contact, obs[115:]), 1 * self.obj_mass)
-
-        # rreg1=
-
-        return r
+        return rewards
 
 
     def addObject(self):
