@@ -26,8 +26,8 @@ class LegoEnv(gym.Env):
 
     def __init__(self, args):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) = 51
-        self.action_space = gym.spaces.box.Box(low=np.array([-1] * 2 + [0] + [-np.pi] * 48, dtype=np.float32),
-                                                high=np.array([1] * 2 + [1] + [np.pi] * 48, dtype=np.float32))
+        self.action_space = gym.spaces.box.Box(low=np.array([-1] * 2 + [0] + [-np.pi / 2] * 48, dtype=np.float32),
+                                                high=np.array([1] * 2 + [1] + [np.pi / 2] * 48, dtype=np.float32))
 
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
@@ -79,7 +79,7 @@ class LegoEnv(gym.Env):
             j[i] = joint_state[0]
         
         action[3:] += j[3:]
-        action[:3] += self.joint_pos_world[:3]
+        action[:3] += self.final_pose_world[:3]
 
         pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
                                     jointIndices=self.available_joints_indexes,
@@ -144,8 +144,8 @@ class LegoEnv(gym.Env):
         goal_pose = np.squeeze(train_data["subgoal_1"]["hand_ref_pose"])[3:]
         goal_contacts = train_data["subgoal_1"]["hand_contact"]
 
-        # set final hand joint position in world frame
-        self.joint_pos_world = ee_goal_pos.reshape(48)
+        # set final hand pose in world frame
+        self.final_pose_world = goal_pose
 
         # set final object pose
         self.final_obj_pos_ = obj_goal_pos
