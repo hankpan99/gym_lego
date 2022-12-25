@@ -24,21 +24,24 @@ def quatInvQuatMul(q, p):
 class LegoEnv(gym.Env):
     # metadata = {'render.modes': ['human']}  
 
-    def __init__(self):
+    def __init__(self, args):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) = 51
-        self.action_space = gym.spaces.box.Box(low=np.array([-1]*2+[0]+[-np.pi]*48),
-                                                high=np.array([1]*2+[1]+[np.pi]*48))
+        self.action_space = gym.spaces.box.Box(low=np.array([-1] * 2 + [0] + [-np.pi] * 48, dtype=np.float32),
+                                                high=np.array([1] * 2 + [1] + [np.pi] * 48, dtype=np.float32))
 
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
         # 6D pose of the object(6) + velocity of the wrist pose(6) + velocity of the object pose(6)
-        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 213),
-                                                    high=np.array([100] * 213))
+        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 213, dtype=np.float32),
+                                                    high=np.array([100] * 213, dtype=np.float32))
 
         # connect to pybullet
-        pb.connect(pb.GUI)
+        if args.GUI:
+            pb.connect(pb.GUI)
+        else:
+            pb.connect(pb.DIRECT)
+
         pb.setTimeStep(1 / 60)
-        # pb.resetSimulation()
         pb.setAdditionalSearchPath(pybullet_data.getDataPath())
         pb.setGravity(0, 0, -9.8)
 
@@ -68,22 +71,33 @@ class LegoEnv(gym.Env):
         # for i in range(len(self.available_joints_indexes)):
         #     pb.resetJointState(self.mano_id, self.available_joints_indexes[i], action[i])
 
+        j = np.zeros(58, dtype=np.float32)
+        
+        # get hand pose and vel
+        for i in range(len(self.available_joints_indexes)):
+            joint_state = np.array(pb.getJointState(self.mano_id,self.available_joints_indexes[i]))[:2]
+            j[i] = joint_state[0]
+        
+        action[3:]+=j[3:]
+        action[:3]+=self.final_pose_[:3]
+
         pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
                                     jointIndices=self.available_joints_indexes,
                                     controlMode=pb.POSITION_CONTROL,
                                     targetPositions=action,
-                                    forces=[1]*51)
+                                    forces=[1] * 51)
 
         pb.stepSimulation()
         time.sleep(1/60)
         
-        if self.cnt == 1000:
+        obs = self.getObservation()
+        reward = self.getReward()
+
+        if self.cnt == 300:
             done = True
         else:
             self.cnt += 1
             done = False
-        obs = self.getObservation()
-        reward = self.getReward(obs)
         
         return obs, reward, done, {}
 
@@ -109,7 +123,7 @@ class LegoEnv(gym.Env):
 
         # set initial hand pose
         init_state = self.hand_traj_reach[0, 0]
-        self.init_rot_ = Rot.from_euler('zxy', init_state[3:6]).as_matrix()
+        self.init_rot_ = Rot.from_euler('XYZ', init_state[3:6]).as_matrix()
         self.init_or_ = np.transpose(self.init_rot_)
 
         for cnt, idx in enumerate(self.available_joints_indexes):
@@ -120,6 +134,7 @@ class LegoEnv(gym.Env):
 
         # get observation
         obs = self.getObservation()
+
         return obs
     
 
@@ -137,13 +152,13 @@ class LegoEnv(gym.Env):
         quat_obj_init = obj_goal_pos[3:]
         Obj_orientation = np.transpose(Obj_orientation_temp)
 
-        quat_goal_hand_w = Rot.from_euler('zxy', goal_pose[:3]).as_quat()
+        quat_goal_hand_w = Rot.from_euler('XYZ', goal_pose[:3]).as_quat()
         root_pose_world_ = Rot.from_quat(quat_goal_hand_w).as_matrix()
 
         # Compute and set object relative goal hand pose
         quat_goal_hand_r = quatInvQuatMul(quat_obj_init, quat_goal_hand_w)
         rotm_goal_hand_r = Rot.from_quat(quat_goal_hand_r).as_matrix()
-        euler_goal_pose = Rot.from_matrix(rotm_goal_hand_r).as_euler('zxy')
+        euler_goal_pose = Rot.from_matrix(rotm_goal_hand_r).as_euler('XYZ')
 
         self.final_pose_ = goal_pose
         self.final_pose_[:3] = euler_goal_pose
@@ -215,7 +230,7 @@ class LegoEnv(gym.Env):
 
         # feature extraction layers
         wrist_position = j_pos[:3]
-        wrist_orientation = Rot.from_euler('zyx', j_pos[3:6]).as_matrix()
+        wrist_orientation = Rot.from_euler('XYZ', j_pos[3:6]).as_matrix()
         wrist_orientation_transpose = np.transpose(wrist_orientation)
 
         obj_position = j[51:54]
@@ -229,7 +244,7 @@ class LegoEnv(gym.Env):
         palm_world_pose_mat = wrist_orientation
         palm_world_pose_mat_trans = np.transpose(palm_world_pose_mat)
         obj_pose_wrist_mat = palm_world_pose_mat_trans @ Obj_orientation_temp
-        obj_pose_ = Rot.from_matrix(obj_pose_wrist_mat).as_euler('zxy')
+        obj_pose_ = Rot.from_matrix(obj_pose_wrist_mat).as_euler('XYZ')
 
         # relative position between object and wrist in wrist coordinates
         rel_objpalm = wrist_position - obj_position
@@ -241,7 +256,7 @@ class LegoEnv(gym.Env):
 
         # current global wirst pose in object relative frame
         rot_mult = Obj_orientation @ wrist_orientation
-        euler_hand = Rot.from_matrix(rot_mult).as_euler('zyx')
+        euler_hand = Rot.from_matrix(rot_mult).as_euler('XYZ')
 
         # difference between target and current global wrist pose
         self.rel_pose_ = self.final_pose_[:3] - euler_hand
@@ -258,7 +273,7 @@ class LegoEnv(gym.Env):
         obj_wrist_trans = np.transpose(obj_wrist)
 
         diff_obj_pose_mat = final_obj_wrist @ obj_wrist_trans # distance between current obj and target obj pose
-        rel_obj_pose_r3 = Rot.from_matrix(diff_obj_pose_mat).as_euler('zxy') # convert to Euler
+        rel_obj_pose_r3 = Rot.from_matrix(diff_obj_pose_mat).as_euler('XYZ') # convert to Euler
         rel_obj_pose_ = rel_obj_pose_r3
 
         # Compute relative 3D position features for all hand joints
@@ -307,7 +322,7 @@ class LegoEnv(gym.Env):
         return obs
 
 
-    def getReward(self,obs):
+    def getReward(self):
         # 6D pose of the wrist(6) + joint angles(45)+ 6D pose of the object(6) + 
         # velocity of the wrist pose(6) + joint angular velocities(45) + velocity of the object pose(6)+
         # each joint forces exceeded on object(21)

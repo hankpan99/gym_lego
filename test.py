@@ -9,12 +9,12 @@ from lego_env import LegoEnv
 #     action3=pickle.load(openfile)["subgoal_1"]["hand_traj_grasp"].reshape((28,51))
 # action=np.vstack([action1, action2, action3])
 
-models_dir = "models/PPO"
+models_dir = "models/1671952788"
 
 env=LegoEnv()
 env.reset()
 
-model_path = f"{models_dir}/250000.zip"
+model_path = f"{models_dir}/290000.zip"
 model = PPO.load(model_path, env=env)
 
 episodes = 5
