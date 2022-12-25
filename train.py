@@ -1,8 +1,10 @@
-from stable_baselines3 import PPO
 import os
 import time
-from lego_env import LegoEnv
 import torch
+from lego_env import LegoEnv
+from stable_baselines3 import PPO
+from stable_baselines3.common.env_util import make_vec_env
+
 
 models_dir = f"models/{int(time.time())}/"
 logdir = f"logs/{int(time.time())}/"
@@ -16,10 +18,10 @@ if not os.path.exists(logdir):
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 print('using device', device)
 
-env=LegoEnv()
+env = make_vec_env(LegoEnv, n_envs=4)
 env.reset()
 
-model = PPO('MlpPolicy', env, verbose=1, tensorboard_log=logdir)
+model = PPO('MlpPolicy', env, verbose=1, tensorboard_log=logdir, device=device)
 
 TIMESTEPS = 10000
 iters = 0

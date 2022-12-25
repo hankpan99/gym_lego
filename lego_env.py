@@ -32,11 +32,11 @@ class LegoEnv(gym.Env):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
         # 6D pose of the object(6) + velocity of the wrist pose(6) + velocity of the object pose(6)
-        self.observation_space = gym.spaces.box.Box(low=np.array([-100]*225),
-                                                    high=np.array([100]*225))
+        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 213),
+                                                    high=np.array([100] * 213))
 
         # connect to pybullet
-        pb.connect(pb.DIRECT)
+        pb.connect(pb.GUI)
         pb.setTimeStep(1 / 60)
         # pb.resetSimulation()
         pb.setAdditionalSearchPath(pybullet_data.getDataPath())
@@ -72,7 +72,7 @@ class LegoEnv(gym.Env):
                                     jointIndices=self.available_joints_indexes,
                                     controlMode=pb.POSITION_CONTROL,
                                     targetPositions=action,
-                                    forces=[100]*51)
+                                    forces=[1]*51)
 
         pb.stepSimulation()
         time.sleep(1/60)
@@ -249,8 +249,8 @@ class LegoEnv(gym.Env):
         self.bodyLinearVel_ = j_vel[:3]
         self.bodyAngularVel_ = j_vel[3:6]
 
-        self.rel_obj_vel = np.transpose(wrist_orientation) * j_vel[51:54] # relative object velocity
-        rel_obj_qvel = np.transpose(wrist_orientation) * j_vel[54] # relative object angular velocity
+        self.rel_obj_vel = np.transpose(np.transpose(wrist_orientation) @ j_vel[51:54]) # relative object velocity
+        rel_obj_qvel = np.transpose(np.transpose(wrist_orientation) @ j_vel[54:]) # relative object angular velocity
         final_obj_pose_mat = Rot.from_quat(self.final_obj_pos_[3:]).as_matrix()
 
         final_obj_wrist = self.init_or_ @ final_obj_pose_mat # target object orientation in initial wrist frame
@@ -297,8 +297,8 @@ class LegoEnv(gym.Env):
                         self.rel_body_pos_,
                         self.rel_pose_,
                         rel_objpalm_pos,
-                        self.rel_obj_vel.reshape(9),
-                        rel_obj_qvel.reshape(9),
+                        self.rel_obj_vel,
+                        rel_obj_qvel,
                         self.final_contact_array_,
                         self.impulses_,
                         self.rel_contacts_,
@@ -328,10 +328,10 @@ class LegoEnv(gym.Env):
         rewards += 2.0 * max(-10.0, pos_reward_) # pos_reward
         rewards += 0.1 * max(-10.0, pose_reward_) # pose_reward
         rewards += 1.0 * max(-10.0, contact_reward_) # contact_reward
-        rewards += 2.0 * min(impulse_reward_, self.obj_mass * 5)# impulse_reward
-        rewards += -1.0 * max(0.0, rel_obj_reward_)# rel_obj_reward_
-        rewards += -0.5 * max(0.0,body_vel_reward_)# body_vel_reward_
-        rewards += -0.5 * max(0.0,body_qvel_reward_)# body_qvel_reward_
+        rewards += 2.0 * min(impulse_reward_, self.obj_mass * 5) # impulse_reward
+        rewards += -1.0 * max(0.0, rel_obj_reward_) # rel_obj_reward_
+        rewards += -0.5 * max(0.0,body_vel_reward_) # body_vel_reward_
+        rewards += -0.5 * max(0.0,body_qvel_reward_) # body_qvel_reward_
 
         return rewards
 
