@@ -71,15 +71,15 @@ class LegoEnv(gym.Env):
         # for i in range(len(self.available_joints_indexes)):
         #     pb.resetJointState(self.mano_id, self.available_joints_indexes[i], action[i])
 
-        j = np.zeros(58, dtype=np.float32)
+        j = np.zeros(51, dtype=np.float32)
         
         # get hand pose and vel
         for i in range(len(self.available_joints_indexes)):
             joint_state = np.array(pb.getJointState(self.mano_id,self.available_joints_indexes[i]))[:2]
             j[i] = joint_state[0]
         
-        action[3:]+=j[3:]
-        action[:3]+=self.final_pose_[:3]
+        action[3:] += j[3:]
+        action[:3] += self.joint_pos_world[:3]
 
         pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
                                     jointIndices=self.available_joints_indexes,
@@ -143,6 +143,9 @@ class LegoEnv(gym.Env):
         ee_goal_pos = train_data["subgoal_1"]["hand_ref_position"]
         goal_pose = np.squeeze(train_data["subgoal_1"]["hand_ref_pose"])[3:]
         goal_contacts = train_data["subgoal_1"]["hand_contact"]
+
+        # set final hand joint position in world frame
+        self.joint_pos_world = ee_goal_pos.reshape(48)
 
         # set final object pose
         self.final_obj_pos_ = obj_goal_pos
