@@ -84,7 +84,7 @@ class LegoEnv(gym.Env):
                                     jointIndices=self.available_joints_indexes,
                                     controlMode=pb.POSITION_CONTROL,
                                     targetPositions=action,
-                                    forces=[1] * 51)
+                                    forces=[5] * 51)
 
         pb.stepSimulation()
         time.sleep(1/60)
@@ -144,7 +144,8 @@ class LegoEnv(gym.Env):
         goal_contacts = train_data["subgoal_1"]["hand_contact"]
 
         # set final hand pose in world frame
-        self.final_pose_world = np.copy(goal_pose)
+        self.final_pose_world = np.copy(train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
+
         # set final object pose
         self.final_obj_pos_ = np.copy(obj_goal_pos)
 
