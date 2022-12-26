@@ -32,8 +32,8 @@ class LegoEnv(gym.Env):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
         # 6D pose of the object(6) + velocity of the wrist pose(6) + velocity of the object pose(6)
-        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 213, dtype=np.float32),
-                                                    high=np.array([100] * 213, dtype=np.float32))
+        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 258, dtype=np.float32),
+                                                    high=np.array([100] * 258, dtype=np.float32))
 
         # connect to pybullet
         if args.GUI:
@@ -75,8 +75,7 @@ class LegoEnv(gym.Env):
         
         # get hand pose and vel
         for i in range(len(self.available_joints_indexes)):
-            joint_state = np.array(pb.getJointState(self.mano_id,self.available_joints_indexes[i]))[:2]
-            j[i] = joint_state[0]
+            j[i] = np.array(pb.getJointState(self.mano_id,self.available_joints_indexes[i])[0])
         
         action[3:] += j[3:]
         action[:3] += self.final_pose_world[:3]
@@ -139,31 +138,30 @@ class LegoEnv(gym.Env):
     
 
     def set_goals(self, train_data):
-        obj_goal_pos = train_data["subgoal_1"]["obj_final"]
+        obj_goal_pos = train_data["subgoal_1"]["obj_init"] # we change obj_final into obj_init !!!!!!!!!!!!!!
         ee_goal_pos = train_data["subgoal_1"]["hand_ref_position"]
-        goal_pose = np.squeeze(train_data["subgoal_1"]["hand_ref_pose"])[3:]
+        goal_pose = train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:]
         goal_contacts = train_data["subgoal_1"]["hand_contact"]
 
         # set final hand pose in world frame
-        self.final_pose_world = goal_pose
-
+        self.final_pose_world = np.copy(goal_pose)
         # set final object pose
-        self.final_obj_pos_ = obj_goal_pos
+        self.final_obj_pos_ = np.copy(obj_goal_pos)
 
         # convert object and handpose pose to rotation matrix format
         Obj_orientation_temp = Rot.from_quat(obj_goal_pos[3:]).as_matrix()
-        quat_obj_init = obj_goal_pos[3:]
+        # quat_obj_init = np.copy(obj_goal_pos[3:])
         Obj_orientation = np.transpose(Obj_orientation_temp)
 
         quat_goal_hand_w = Rot.from_euler('XYZ', goal_pose[:3]).as_quat()
         root_pose_world_ = Rot.from_quat(quat_goal_hand_w).as_matrix()
 
         # Compute and set object relative goal hand pose
-        quat_goal_hand_r = quatInvQuatMul(quat_obj_init, quat_goal_hand_w)
-        rotm_goal_hand_r = Rot.from_quat(quat_goal_hand_r).as_matrix()
+        # quat_goal_hand_r = quatInvQuatMul(quat_obj_init, quat_goal_hand_w)
+        # rotm_goal_hand_r = Rot.from_quat(quat_goal_hand_r).as_matrix()
+        rotm_goal_hand_r = Obj_orientation @ root_pose_world_
         euler_goal_pose = Rot.from_matrix(rotm_goal_hand_r).as_euler('XYZ')
-
-        self.final_pose_ = goal_pose
+        self.final_pose_ = np.copy(goal_pose)
         self.final_pose_[:3] = euler_goal_pose
 
         # Compute and convert hand 3D joint positions into object relative frame
@@ -173,7 +171,7 @@ class LegoEnv(gym.Env):
 
         # Intialize and set goal contact array
         num_active_contacts_ = np.sum(goal_contacts)
-        self.final_contact_array_ = goal_contacts
+        self.final_contact_array_ = np.copy(goal_contacts)
         self.k_contact = 1.0 / num_active_contacts_
 
 
@@ -210,7 +208,7 @@ class LegoEnv(gym.Env):
         
         # get hand pose and vel
         for i in range(len(self.available_joints_indexes)):
-            joint_state = np.array(pb.getJointState(self.mano_id,self.available_joints_indexes[i]))[:2]
+            joint_state = np.array(pb.getJointState(self.mano_id,self.available_joints_indexes[i])[:2])
             j[i] = joint_state[0]
             j_vel[i] = joint_state[1]
         
@@ -232,19 +230,19 @@ class LegoEnv(gym.Env):
         j_vel[51:] = obj_vel
 
         # feature extraction layers
-        wrist_position = j_pos[:3]
-        wrist_orientation = Rot.from_euler('XYZ', j_pos[3:6]).as_matrix()
+        wrist_position = np.copy(j_pos[:3])
+        wrist_orientation = Rot.from_euler('XYZ', j[3:6]).as_matrix()
         wrist_orientation_transpose = np.transpose(wrist_orientation)
 
-        obj_position = j[51:54]
+        obj_position = np.copy(j[51:54])
         Obj_orientation_temp = Rot.from_quat(j[54:]).as_matrix()
         Obj_orientation = np.transpose(Obj_orientation_temp)
 
         # compute relative hand pose
-        self.rel_pose_ = self.final_pose_ - j_pos
+        self.rel_pose_ = self.final_pose_ - j[3:51]
 
         # compute object pose in wrist frame
-        palm_world_pose_mat = wrist_orientation
+        palm_world_pose_mat = np.copy(wrist_orientation)
         palm_world_pose_mat_trans = np.transpose(palm_world_pose_mat)
         obj_pose_wrist_mat = palm_world_pose_mat_trans @ Obj_orientation_temp
         obj_pose_ = Rot.from_matrix(obj_pose_wrist_mat).as_euler('XYZ')
@@ -262,7 +260,7 @@ class LegoEnv(gym.Env):
         euler_hand = Rot.from_matrix(rot_mult).as_euler('XYZ')
 
         # difference between target and current global wrist pose
-        self.rel_pose_ = self.final_pose_[:3] - euler_hand
+        self.rel_pose_[:3] = self.final_pose_[:3] - euler_hand
 
         self.bodyLinearVel_ = j_vel[:3]
         self.bodyAngularVel_ = j_vel[3:6]
@@ -350,6 +348,15 @@ class LegoEnv(gym.Env):
         rewards += -1.0 * max(0.0, rel_obj_reward_) # rel_obj_reward_
         rewards += -0.5 * max(0.0,body_vel_reward_) # body_vel_reward_
         rewards += -0.5 * max(0.0,body_qvel_reward_) # body_qvel_reward_
+
+        # print("pos_reward:",2.0 * max(-10.0, pos_reward_))
+        # print("pose_reward:",0.1 * max(-10.0, pose_reward_))
+        # print("contact_reward:",1.0 * max(-10.0, contact_reward_))
+        # print("impulse_reward:",2.0 * min(impulse_reward_, self.obj_mass * 5))
+        # print("rel_obj_reward_:",-1.0 * max(0.0, rel_obj_reward_))
+        # print("body_vel_reward_:",-0.5 * max(0.0,body_vel_reward_))
+        # print("body_qvel_reward_:",-0.5 * max(0.0,body_qvel_reward_))
+        # print("-"*10)
 
         return rewards
 
