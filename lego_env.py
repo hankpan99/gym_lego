@@ -103,7 +103,7 @@ class LegoEnv(gym.Env):
         Obj_Position = obj_pose[:3]
         Obj_orientation_temp = Rot.from_quat(obj_pose[3:]).as_matrix()
 
-        Fpos_world = Obj_orientation_temp @ self.final_pose_world[:3]
+        Fpos_world = Obj_orientation_temp @ self.final_mp_base
         Fpos_world += Obj_Position
 
         act_pos = Fpos_world - self.hand_traj_reach[0, 0, :3] # compute distance of curent root to initial root in world frame
@@ -186,8 +186,8 @@ class LegoEnv(gym.Env):
         goal_pose = train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:]
         goal_contacts = train_data["subgoal_1"]["hand_contact"]
 
-        # set final hand pose in world frame
-        self.final_pose_world = np.copy(train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
+        # # set final hand pose in world frame
+        # self.final_pose_world = np.copy(train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
 
         # set final object pose
         self.final_obj_pos_ = np.copy(obj_goal_pos)
@@ -212,6 +212,10 @@ class LegoEnv(gym.Env):
         tmp_rel_pos = ee_goal_pos - np.tile(self.final_obj_pos_[:3], (16, 1))
         self.final_ee_pos_ = Obj_orientation @ np.transpose(tmp_rel_pos)
         self.final_ee_pos_ = np.transpose(self.final_ee_pos_)
+
+        # convert mano pybullet hand base translation into object relative frame
+        tmp_rel_pos = train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[:3] - self.final_obj_pos_[:3]
+        self.final_mp_base = Obj_orientation @ np.transpose(tmp_rel_pos)
 
         # Intialize and set goal contact array
         num_active_contacts_ = np.sum(goal_contacts)
