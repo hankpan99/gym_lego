@@ -26,8 +26,8 @@ class LegoEnv(gym.Env):
 
     def __init__(self, args):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) = 51
-        self.action_space = gym.spaces.box.Box(low=np.array([-1] * 2 + [0] + [-np.pi / 2] * 48, dtype=np.float32),
-                                                high=np.array([1] * 2 + [1] + [np.pi / 2] * 48, dtype=np.float32))
+        self.action_space = gym.spaces.box.Box(low=np.array([-1] * 3 + [-np.pi / 2] * 48, dtype=np.float32),
+                                                high=np.array([1] * 3 + [np.pi / 2] * 48, dtype=np.float32))
 
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
@@ -66,17 +66,22 @@ class LegoEnv(gym.Env):
             self.joint_limit_low[cnt] = tmp_low
             self.joint_limit_high[cnt] = tmp_high
         
-        self.joint_limit_low[:3] = np.array([-2, -2, -2])
-        self.joint_limit_low[3:6] = np.array([-np.pi, -np.pi, -np.pi])
+        self.joint_limit_low[:3].fill(-2)
+        self.joint_limit_low[3:6].fill(-np.pi)
 
-        self.joint_limit_high[:3] = np.array([2, 2, 2])
-        self.joint_limit_high[3:6] = np.array([np.pi, np.pi, np.pi])
+        self.joint_limit_high[:3].fill(2)
+        self.joint_limit_high[3:6].fill(np.pi)
 
         # initialize actionMean_
         self.actionMean_ = np.zeros(51)
         
         for i in range(51):
             self.actionMean_[i] = (self.joint_limit_low[i] + self.joint_limit_high[i]) / 2
+
+        # set action scaling
+        self.actionStd_ = np.full(51, 0.015)
+        self.actionStd_[:3].fill(0.001)
+        self.actionStd_[3:6].fill(0.01)
 
         # create link to joint list
         self.linkToJointList = [6,  9,  12, 15,
@@ -92,10 +97,13 @@ class LegoEnv(gym.Env):
 
     def step(self, action):
         # wrist guidence
-        self.actionMean_[:3] = self.final_pose_world[:3]
+        act_pos = self.final_pose_world[:3] - self.hand_traj_reach[0, 0, :3] # compute distance of curent root to initial root in world frame
+        act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
+        self.actionMean_[:3] = act_or_pose
 
-        # add wrist bias (first 3DOF) and last pose (48DoF)
-        action += self.actionMean_
+        # Compute position target for actuators
+        action = action * self.actionStd_ # residual action * scaling
+        action += self.actionMean_ # add wrist bias (first 3DOF) and last pose (48DoF)
 
         # clipped the action
         action_clipped = np.minimum(np.maximum(action, self.joint_limit_low), self.joint_limit_high)
