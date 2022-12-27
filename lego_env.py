@@ -52,9 +52,33 @@ class LegoEnv(gym.Env):
         # add mano urdf
         self.mano_id = pb.loadURDF("/manoUrdf/Leo/mano.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
         self.available_joints_indexes = [i for i in range(pb.getNumJoints(self.mano_id)) if pb.getJointInfo(self.mano_id, i)[2] != pb.JOINT_FIXED]
+        
+        # reset hand pose and enable forcetorquesensor
         for idx in self.available_joints_indexes:
             pb.resetJointState(self.mano_id, idx, 0)
             pb.enableJointForceTorqueSensor(self.mano_id, idx, True)
+        
+        # set joint limit
+        self.joint_limit_low, self.joint_limit_high = np.zeros(51), np.zeros(51)
+        
+        for cnt, idx in enumerate(self.available_joints_indexes[6:], start=6):
+            tmp_low, tmp_high = pb.getJointInfo(self.mano_id, idx)[8:10]
+            self.joint_limit_low[cnt] = tmp_low
+            self.joint_limit_high[cnt] = tmp_high
+        
+        self.joint_limit_low[:3] = np.array([-2, -2, -2])
+        self.joint_limit_low[3:6] = np.array([-np.pi, -np.pi, -np.pi])
+
+        self.joint_limit_high[:3] = np.array([2, 2, 2])
+        self.joint_limit_high[3:6] = np.array([np.pi, np.pi, np.pi])
+
+        # initialize actionMean_
+        self.actionMean_ = np.zeros(51)
+        
+        for i in range(51):
+            self.actionMean_[i] = (self.joint_limit_low[i] + self.joint_limit_high[i]) / 2
+
+        # create link to joint list
         self.linkToJointList = [6,  9,  12, 15,
                                 18, 21, 24,
                                 27, 30, 33,
@@ -67,29 +91,30 @@ class LegoEnv(gym.Env):
 
 
     def step(self, action):
-        # set positoin can work @@
-        # for i in range(len(self.available_joints_indexes)):
-        #     pb.resetJointState(self.mano_id, self.available_joints_indexes[i], action[i])
+        # wrist guidence
+        self.actionMean_[:3] = self.final_pose_world[:3]
 
-        j = np.zeros(51, dtype=np.float32)
-        
-        # get hand pose and vel
-        for i in range(len(self.available_joints_indexes)):
-            j[i] = np.array(pb.getJointState(self.mano_id,self.available_joints_indexes[i])[0])
-        
-        action[3:] += j[3:]
-        action[:3] += self.final_pose_world[:3]
+        # add wrist bias (first 3DOF) and last pose (48DoF)
+        action += self.actionMean_
+
+        # clipped the action
+        action_clipped = np.minimum(np.maximum(action, self.joint_limit_low), self.joint_limit_high)
 
         pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
                                     jointIndices=self.available_joints_indexes,
                                     controlMode=pb.POSITION_CONTROL,
-                                    targetPositions=action,
+                                    targetPositions=action_clipped,
                                     forces=[5] * 51)
 
         pb.stepSimulation()
         time.sleep(1/60)
         
         obs = self.getObservation()
+        
+        # update actionMean_
+        for i in range(len(self.available_joints_indexes)):
+            self.actionMean_[i] = pb.getJointState(self.mano_id,self.available_joints_indexes[i])[0]
+
         reward = self.getReward()
 
         if self.cnt == 300:
@@ -127,6 +152,7 @@ class LegoEnv(gym.Env):
 
         for cnt, idx in enumerate(self.available_joints_indexes):
             pb.resetJointState(self.mano_id, idx, init_state[cnt])
+            self.actionMean_[cnt] = init_state[cnt]
         
         # set goals
         self.set_goals(train_data)
