@@ -97,7 +97,16 @@ class LegoEnv(gym.Env):
 
     def step(self, action):
         # wrist guidence
-        act_pos = self.final_pose_world[:3] - self.hand_traj_reach[0, 0, :3] # compute distance of curent root to initial root in world frame
+        # Convert final root hand translation back from (current) object into world frame
+        obj_pose = pb.getBasePositionAndOrientation(self.objId)
+        obj_pose = np.array(obj_pose[0] + obj_pose[1])
+        Obj_Position = obj_pose[:3]
+        Obj_orientation_temp = Rot.from_quat(obj_pose[3:]).as_matrix()
+
+        Fpos_world = Obj_orientation_temp @ self.final_pose_world[:3]
+        Fpos_world += Obj_Position
+
+        act_pos = Fpos_world - self.hand_traj_reach[0, 0, :3] # compute distance of curent root to initial root in world frame
         act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
         self.actionMean_[:3] = act_or_pose
 
@@ -172,7 +181,7 @@ class LegoEnv(gym.Env):
     
 
     def set_goals(self, train_data):
-        obj_goal_pos = train_data["subgoal_1"]["obj_init"] # we change obj_final into obj_init !!!!!!!!!!!!!!
+        obj_goal_pos = train_data["subgoal_1"]["obj_final"] # same as original code in dgrasp !!!!!!!!!!!!!!
         ee_goal_pos = train_data["subgoal_1"]["hand_ref_position"]
         goal_pose = train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:]
         goal_contacts = train_data["subgoal_1"]["hand_contact"]
