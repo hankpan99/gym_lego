@@ -79,9 +79,9 @@ class LegoEnv(gym.Env):
             self.actionMean_[i] = (self.joint_limit_low[i] + self.joint_limit_high[i]) / 2
 
         # set action scaling
-        self.actionStd_ = np.full(51, 0.015)
-        self.actionStd_[:3].fill(0.001)
-        self.actionStd_[3:6].fill(0.01)
+        self.actionStd_ = np.full(51, 0.1)
+        self.actionStd_[:3].fill(0.01)
+        self.actionStd_[3:6].fill(0.1)
 
         # create link to joint list
         self.linkToJointList = [6,  9,  12, 15,
@@ -98,17 +98,18 @@ class LegoEnv(gym.Env):
     def step(self, action):
         # wrist guidence
         # Convert final root hand translation back from (current) object into world frame
-        obj_pose = pb.getBasePositionAndOrientation(self.objId)
-        obj_pose = np.array(obj_pose[0] + obj_pose[1])
-        Obj_Position = obj_pose[:3]
-        Obj_orientation_temp = Rot.from_quat(obj_pose[3:]).as_matrix()
+        # obj_pose = pb.getBasePositionAndOrientation(self.objId)
+        # obj_pose = np.array(obj_pose[0] + obj_pose[1])
+        # Obj_Position = obj_pose[:3]
+        # Obj_orientation_temp = Rot.from_quat(obj_pose[3:]).as_matrix()
 
-        Fpos_world = Obj_orientation_temp @ self.final_mp_base
-        Fpos_world += Obj_Position
+        # Fpos_world = Obj_orientation_temp @ self.final_mp_base
+        # Fpos_world += Obj_Position
 
-        act_pos = Fpos_world - self.hand_traj_reach[0, 0, :3] # compute distance of curent root to initial root in world frame
-        act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
-        self.actionMean_[:3] = act_or_pose
+        # act_pos = Fpos_world - self.hand_traj_reach[0, 0, :3] # compute distance of curent root to initial root in world frame
+        # act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
+        # self.actionMean_[:3] = act_or_pose
+        self.actionMean_[:3] = self.final_pose_world[:3]
 
         # Compute position target for actuators
         action = action * self.actionStd_ # residual action * scaling
@@ -181,13 +182,13 @@ class LegoEnv(gym.Env):
     
 
     def set_goals(self, train_data):
-        obj_goal_pos = train_data["subgoal_1"]["obj_final"] # same as original code in dgrasp !!!!!!!!!!!!!!
+        obj_goal_pos = train_data["subgoal_1"]["obj_init"] # not same as original code in dgrasp !!!!!!!!!!!!!!
         ee_goal_pos = train_data["subgoal_1"]["hand_ref_position"]
         goal_pose = train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:]
         goal_contacts = train_data["subgoal_1"]["hand_contact"]
 
-        # # set final hand pose in world frame
-        # self.final_pose_world = np.copy(train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
+        # set final hand pose in world frame
+        self.final_pose_world = np.copy(train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
 
         # set final object pose
         self.final_obj_pos_ = np.copy(obj_goal_pos)
