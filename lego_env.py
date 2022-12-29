@@ -83,6 +83,16 @@ class LegoEnv(gym.Env):
         self.actionStd_[:3].fill(0.01)
         self.actionStd_[3:6].fill(0.1)
 
+        # initialize 3D positions weights for fingertips higher than for other fingerparts
+        self.finger_weights_ = np.full(48, 1, dtype=np.float32)
+        self.finger_weights_[9:12] *= 4
+        self.finger_weights_[18:21] *= 4
+        self.finger_weights_[27:30] *= 4
+        self.finger_weights_[36:39] *= 4
+        self.finger_weights_[45:48] *= 4
+        self.finger_weights_ /= np.sum(self.finger_weights_)
+        self.finger_weights_ *= 48
+
         # create link to joint list
         self.linkToJointList = [6,  9,  12, 15,
                                 18, 21, 24,
@@ -379,7 +389,7 @@ class LegoEnv(gym.Env):
         
         # Compute general reward terms
         pose_reward_ = -np.linalg.norm(self.rel_pose_)
-        pos_reward_ = -np.linalg.norm(self.rel_body_pos_) ** 2 # without finger_weights
+        pos_reward_ = -np.linalg.norm(self.rel_body_pos_ * self.finger_weights_) ** 2 # without finger_weights
 
         # Compute regularization rewards
         rel_obj_reward_ = np.linalg.norm(self.rel_obj_vel) ** 2
