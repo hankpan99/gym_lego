@@ -99,6 +99,9 @@ class LegoEnv(gym.Env):
                                 27, 30, 33,
                                 36, 39, 42,
                                 45, 48, 51]
+
+        # add motion_synthesis flag
+        self.motion_synthesis = False
         
         # add object and set object mass
         self.obj_mass = 0.2
@@ -119,7 +122,12 @@ class LegoEnv(gym.Env):
         # act_pos = Fpos_world - self.hand_traj_reach[0, 0, :3] # compute distance of curent root to initial root in world frame
         # act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
         # self.actionMean_[:3] = act_or_pose
-        self.actionMean_[:3] = self.final_pose_world[:3]
+
+        if self.motion_synthesis:
+            self.actionMean_[:3] = self.final_pose_world[:3]
+            self.actionMean_[2] += 0.3
+        else:
+            self.actionMean_[:3] = self.final_pose_world[:3]
 
         # Compute position target for actuators
         action = action * self.actionStd_ # residual action * scaling
@@ -185,6 +193,9 @@ class LegoEnv(gym.Env):
         # set goals
         self.set_goals(train_data)
 
+        # init motion_synthesis flag
+        self.motion_synthesis = False
+
         # get observation
         obs = self.getObservation()
 
@@ -232,24 +243,6 @@ class LegoEnv(gym.Env):
         num_active_contacts_ = np.sum(goal_contacts)
         self.final_contact_array_ = np.copy(goal_contacts)
         self.k_contact = 1.0 / num_active_contacts_
-
-
-    def render(self, mode='human'):
-        view_matrix = pb.computeViewMatrixFromYawPitchRoll(cameraTargetPosition=[0.7,0,0.05],
-                                                            distance=.7,
-                                                            yaw=90,
-                                                            pitch=-70,
-                                                            roll=0,
-                                                            upAxisIndex=2)
-        proj_matrix = pb.computeProjectionMatrixFOV(fov=60,
-                                                    aspect=float(960) /720,
-                                                    nearVal=0.1,
-                                                    farVal=100.0)
-        pb.getCameraImage(width=960,
-                        height=720,
-                        viewMatrix=view_matrix,
-                        projectionMatrix=proj_matrix,
-                        renderer=pb.ER_BULLET_HARDWARE_OPENGL)
 
 
     def close(self):
@@ -401,23 +394,28 @@ class LegoEnv(gym.Env):
         # Store all rewards
         rewards = 0
         rewards += 2.0 * max(-10.0, pos_reward_) # pos_reward
-        rewards += 0.1 * max(-10.0, pose_reward_) # pose_reward
-        rewards += 1.0 * max(-10.0, contact_reward_) # contact_reward
-        rewards += 2.0 * min(impulse_reward_, self.obj_mass * 5) # impulse_reward
+        rewards += 0.5 * max(-10.0, pose_reward_) # pose_reward
+        rewards += 0.5 * max(-10.0, contact_reward_) # contact_reward
+        rewards += 0.5 * min(impulse_reward_, self.obj_mass) # impulse_reward
         rewards += -1.0 * max(0.0, rel_obj_reward_) # rel_obj_reward_
         rewards += -0.5 * max(0.0,body_vel_reward_) # body_vel_reward_
         rewards += -0.5 * max(0.0,body_qvel_reward_) # body_qvel_reward_
 
         # print("pos_reward:",2.0 * max(-10.0, pos_reward_))
-        # print("pose_reward:",0.1 * max(-10.0, pose_reward_))
-        # print("contact_reward:",1.0 * max(-10.0, contact_reward_))
-        # print("impulse_reward:",2.0 * min(impulse_reward_, self.obj_mass * 5))
+        # print("pose_reward:",0.5 * max(-10.0, pose_reward_))
+        # print("contact_reward:",0.5 * max(-10.0, contact_reward_))
+        # print("impulse_reward:",0.5 * min(impulse_reward_, self.obj_mass))
         # print("rel_obj_reward_:",-1.0 * max(0.0, rel_obj_reward_))
         # print("body_vel_reward_:",-0.5 * max(0.0,body_vel_reward_))
         # print("body_qvel_reward_:",-0.5 * max(0.0,body_qvel_reward_))
         # print("-"*10)
 
         return rewards
+
+
+    def set_root_control(self):
+        self.motion_synthesis = True
+        # pb.removeBody(self.plane_id)
 
 
     def addObject(self):
