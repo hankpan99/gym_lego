@@ -99,6 +99,10 @@ class LegoEnv(gym.Env):
                                 27, 30, 33,
                                 36, 39, 42,
                                 45, 48, 51]
+        
+        # add link friction
+        for l in self.linkToJointList:
+            pb.changeDynamics(bodyUniqueId=self.mano_id,linkIndex=l,lateralFriction=1)
 
         # add motion_synthesis flag
         self.motion_synthesis = False
@@ -343,6 +347,7 @@ class LegoEnv(gym.Env):
         self.rel_body_pos_ = obj_frame_diff_h.reshape(48)
 
         # compute current contacts of hand parts and the contact force
+        self.z_impulse = 0
         self.impulses_ = np.zeros(16)
         for cnt, l in enumerate(self.linkToJointList):
             if len(pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)):
@@ -352,6 +357,7 @@ class LegoEnv(gym.Env):
                     contact_normal = np.array(c[7])
                     contact_force = np.array(c[9])
                     force += (contact_force * contact_normal)
+                self.z_impulse += force[2]
                 self.impulses_[cnt] = np.linalg.norm(force)
         
         # compute relative target contact vector, i.e., which goal contacts are currently in contact
@@ -394,20 +400,22 @@ class LegoEnv(gym.Env):
         # Store all rewards
         rewards = 0
         rewards += 2.0 * max(-10.0, pos_reward_) # pos_reward
-        rewards += 0.5 * max(-10.0, pose_reward_) # pose_reward
-        rewards += 0.5 * max(-10.0, contact_reward_) # contact_reward
-        rewards += 0.5 * min(impulse_reward_, self.obj_mass) # impulse_reward
+        rewards += 0.2 * max(-10.0, pose_reward_) # pose_reward
+        rewards += 0.2 * max(-10.0, contact_reward_) # contact_reward
+        rewards += 1.0 * min(impulse_reward_, self.obj_mass) # impulse_reward
         rewards += -1.0 * max(0.0, rel_obj_reward_) # rel_obj_reward_
         rewards += -0.5 * max(0.0,body_vel_reward_) # body_vel_reward_
         rewards += -0.5 * max(0.0,body_qvel_reward_) # body_qvel_reward_
+        rewards += -1 * min(self.obj_mass,self.z_impulse)
 
         # print("pos_reward:",2.0 * max(-10.0, pos_reward_))
-        # print("pose_reward:",0.5 * max(-10.0, pose_reward_))
-        # print("contact_reward:",0.5 * max(-10.0, contact_reward_))
-        # print("impulse_reward:",0.5 * min(impulse_reward_, self.obj_mass))
+        # print("pose_reward:",0.2 * max(-10.0, pose_reward_))
+        # print("contact_reward:",0.2 * max(-10.0, contact_reward_))
+        # print("impulse_reward:",1.0 * min(impulse_reward_, self.obj_mass))
         # print("rel_obj_reward_:",-1.0 * max(0.0, rel_obj_reward_))
         # print("body_vel_reward_:",-0.5 * max(0.0,body_vel_reward_))
         # print("body_qvel_reward_:",-0.5 * max(0.0,body_qvel_reward_))
+        # print("z_impulse:",-1* min(self.obj_mass,self.z_impulse))
         # print("-"*10)
 
         return rewards
@@ -427,10 +435,13 @@ class LegoEnv(gym.Env):
         collisionShapeId = pb.createCollisionShape(shapeType=pb.GEOM_MESH,
                                                 fileName="./brick/type_D.obj",
                                                 meshScale=meshScale)
-        return pb.createMultiBody(
+    
+        objId=pb.createMultiBody(
             self.obj_mass,
             baseCollisionShapeIndex=collisionShapeId,
             baseVisualShapeIndex=visualShapeId,
             basePosition=[0, 0, 0],
             baseOrientation=[0, 0, 0, 1]
         )
+        
+        return objId
