@@ -358,6 +358,8 @@ class LegoEnv(gym.Env):
                     contact_force = np.array(c[9])
                     force += (contact_force * contact_normal)
                 self.z_impulse += force[2]
+                if force[2] > 0:
+                    force.fill(0)
                 self.impulses_[cnt] = np.linalg.norm(force)
         
         # compute relative target contact vector, i.e., which goal contacts are currently in contact
@@ -406,7 +408,7 @@ class LegoEnv(gym.Env):
         rewards += -1.0 * max(0.0, rel_obj_reward_) # rel_obj_reward_
         rewards += -0.5 * max(0.0,body_vel_reward_) # body_vel_reward_
         rewards += -0.5 * max(0.0,body_qvel_reward_) # body_qvel_reward_
-        rewards += -1 * min(self.obj_mass,self.z_impulse)
+        # rewards += -1 * min(self.obj_mass,self.z_impulse)
 
         # print("pos_reward:",2.0 * max(-10.0, pos_reward_))
         # print("pose_reward:",0.2 * max(-10.0, pose_reward_))
