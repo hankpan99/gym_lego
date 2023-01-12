@@ -184,7 +184,7 @@ class DexYCBEnv(gym.Env):
         else:
             self.cnt += 1
             done = False
-        pb.resetBasePositionAndOrientation(self.objId, self.obj_init[:3], self.obj_init[3:])
+        
         return obs, reward, done, {}
 
 
