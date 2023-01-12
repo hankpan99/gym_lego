@@ -108,7 +108,7 @@ class DexYCBEnv(gym.Env):
         self.motion_synthesis = False
         
         # add object and set object mass
-        self.obj_mass = 0.1
+        self.obj_mass = 0.01
         self.objId = self.addObject()
 
         # for experiments
@@ -138,8 +138,8 @@ class DexYCBEnv(gym.Env):
             self.actionMean_[:3] = self.final_pose_world[:3]
 
         # Compute position target for actuators
-        # action = action * self.actionStd_ # residual action * scaling
-        # action += self.actionMean_ # add wrist bias (first 3DOF) and last pose (48DoF)
+        action = action * self.actionStd_ # residual action * scaling
+        action += self.actionMean_ # add wrist bias (first 3DOF) and last pose (48DoF)
 
         # if self.motion_synthesis:
         #     tmp_idx = (self.cnt - 150) // 9
@@ -154,7 +154,7 @@ class DexYCBEnv(gym.Env):
         pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
                                     jointIndices=self.available_joints_indexes,
                                     controlMode=pb.POSITION_CONTROL,
-                                    targetPositions=action,
+                                    targetPositions=action_clipped,
                                     forces=[5] * 51)
 
         pb.stepSimulation()
