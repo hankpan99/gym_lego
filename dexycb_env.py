@@ -21,9 +21,7 @@ def quatInvQuatMul(q, p):
 
     return pq[[3, 0, 1, 2]]
 
-class DexYCBEnv(gym.Env):
-    # metadata = {'render.modes': ['human']}  
-
+class DexYCBEnv(gym.Env): 
     def __init__(self, args):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) = 51
         self.action_space = gym.spaces.box.Box(low=np.array([-1] * 3 + [-np.pi / 2] * 48, dtype=np.float32),
@@ -32,8 +30,8 @@ class DexYCBEnv(gym.Env):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
         # 6D pose of the object(6) + velocity of the wrist pose(6) + velocity of the object pose(6)
-        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 258, dtype=np.float32),
-                                                    high=np.array([100] * 258, dtype=np.float32))
+        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 273, dtype=np.float32),
+                                                    high=np.array([100] * 273, dtype=np.float32))
 
         # connect to pybullet
         if args.GUI:
@@ -50,7 +48,7 @@ class DexYCBEnv(gym.Env):
         self.plane_id = pb.loadURDF("plane.urdf")
 
         # add mano urdf
-        self.mano_id = pb.loadURDF("/manoUrdf/Leo/mano.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
+        self.mano_id = pb.loadURDF("/manoUrdf/Leo/mano_addTips.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
         self.available_joints_indexes = [i for i in range(pb.getNumJoints(self.mano_id)) if pb.getJointInfo(self.mano_id, i)[2] != pb.JOINT_FIXED]
         
         # reset hand pose and enable forcetorquesensor
@@ -79,26 +77,31 @@ class DexYCBEnv(gym.Env):
             self.actionMean_[i] = (self.joint_limit_low[i] + self.joint_limit_high[i]) / 2
 
         # set action scaling
-        self.actionStd_ = np.full(51, 0.1)
-        self.actionStd_[:3].fill(0.01)
-        self.actionStd_[3:6].fill(0.1)
+        self.actionStd_ = np.full(51, 0.015)
+        self.actionStd_[:3].fill(0.001)
+        self.actionStd_[3:6].fill(0.01)
 
         # initialize 3D positions weights for fingertips higher than for other fingerparts
-        self.finger_weights_ = np.full(48, 1, dtype=np.float32)
-        self.finger_weights_[9:12] *= 4
-        self.finger_weights_[18:21] *= 4
-        self.finger_weights_[27:30] *= 4
+        self.finger_weights_ = np.full(63, 1, dtype=np.float32)
+        self.finger_weights_[12:15] *= 4
+        self.finger_weights_[24:27] *= 4
         self.finger_weights_[36:39] *= 4
-        self.finger_weights_[45:48] *= 4
+        self.finger_weights_[48:51] *= 4
+        self.finger_weights_[60:63] *= 4
         self.finger_weights_ /= np.sum(self.finger_weights_)
-        self.finger_weights_ *= 48
+        self.finger_weights_ *= 63
 
         # create link to joint list
-        self.linkToJointList = [6,  9,  12, 15,
-                                18, 21, 24,
-                                27, 30, 33,
-                                36, 39, 42,
-                                45, 48, 51]
+        self.linkToJointList = [6,9,12,15,16,
+                                19,22,25,26,
+                                29,32,35,36,
+                                39,42,45,46,
+                                49,52,55,56]
+        self.linkList = [6,9,12,15,
+                        19,22,25,
+                        29,32,35,
+                        39,42,45,
+                        49,52,55]
         
         # add link friction
         for l in self.linkToJointList:
@@ -108,13 +111,17 @@ class DexYCBEnv(gym.Env):
         self.motion_synthesis = False
         
         # add object and set object mass
-        self.obj_mass = 0.01
+        self.obj_mass = 0.00001 # 0.05
         self.objId = self.addObject()
 
-        # for experiments
-        # pb.resetDebugVisualizerCamera(1.4000000953674316, 198.80026245117188, -22.000024795532227, [0.23695850372314453, -0.6510381698608398, -0.3999999165534973])
-        # self.expcnt_list=[]
+        # arguments
         self.args = args
+
+        # training data
+        with(open("./dexycb_data_all.pickle", "rb")) as openfile:
+            self.train_data = pickle.load(openfile)[0]
+
+        # self.data_id = 0
 
     def step(self, action):
         # wrist guidence
@@ -131,31 +138,30 @@ class DexYCBEnv(gym.Env):
         # act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
         # self.actionMean_[:3] = act_or_pose
 
-        if self.motion_synthesis:
-            self.actionMean_[:6] = self.final_pose_world[:6]
-            self.actionMean_[2] += 0.1
-        else:
-            self.actionMean_[:3] = self.final_pose_world[:3]
-
         # Compute position target for actuators
-        action = action * self.actionStd_ # residual action * scaling
-        action += self.actionMean_ # add wrist bias (first 3DOF) and last pose (48DoF)
+        if True: # use predict result
+            if self.motion_synthesis:
+                self.actionMean_[:6] = self.final_pose_world[:6]
+                self.actionMean_[2] += 0.1
+            else:
+                self.actionMean_[:3] = self.final_pose_world[:3]
+            action = action * self.actionStd_ # residual action * scaling
+            action += self.actionMean_ # add wrist bias (first 3DOF) and last pose (48DoF)
 
-        # if self.motion_synthesis:
-        #     tmp_idx = (self.cnt - 150) // 9
-        #     tmp_idx = min(tmp_idx, 27)
-        #     action[:6] = self.hand_traj_grasp[tmp_idx, :, :6]
+            # clipped the action
+            action_clipped = np.minimum(np.maximum(action, self.joint_limit_low), self.joint_limit_high)
 
-        # clipped the action
-        action_clipped = np.minimum(np.maximum(action, self.joint_limit_low), self.joint_limit_high)
-
-        # if self.motion_synthesis:
-        #     action[2] += 0.1
-        pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
-                                    jointIndices=self.available_joints_indexes,
-                                    controlMode=pb.POSITION_CONTROL,
-                                    targetPositions=action_clipped,
-                                    forces=[5] * 51)
+            pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
+                                        jointIndices=self.available_joints_indexes,
+                                        controlMode=pb.POSITION_CONTROL,
+                                        targetPositions=action_clipped,
+                                        forces=[5] * 51)
+        else:
+            pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
+                                        jointIndices=self.available_joints_indexes,
+                                        controlMode=pb.POSITION_CONTROL,
+                                        targetPositions=action,
+                                        forces=[5] * 51)
 
         pb.stepSimulation()
         time.sleep(1/60)
@@ -168,19 +174,8 @@ class DexYCBEnv(gym.Env):
 
         reward = self.getReward()
 
-        # if self.motion_synthesis:
-        #     if np.sum(self.rel_contacts_):
-        #         self.expcnt+=1
-
-        # if self.cnt==150:
-        #     self.motion_synthesis=True
-
         if self.cnt == 300:
             done = True
-            # self.expcnt_list.append(self.expcnt)
-
-            # with open(f'./exp/exp_{self.args.demo}_{self.args.filenum}.npy', 'wb') as f:
-            #     np.save(f, np.array(self.expcnt_list))
         else:
             self.cnt += 1
             done = False
@@ -190,25 +185,19 @@ class DexYCBEnv(gym.Env):
 
     def reset(self):
         self.cnt = 0
+        # self.data_id = (self.data_id + 1) % 28 # ???
+        # self.cur_train_data = self.train_data[self.data_id]
+        self.cur_train_data = self.train_data
 
-        # read training data
-        with(open("./dexycb_data.pickle", "rb")) as openfile:
-            train_data = pickle.load(openfile)
-
-        self.obj_init = train_data["subgoal_1"]["obj_init"]
-        self.hand_traj_reach = train_data["subgoal_1"]["hand_traj_reach"]
-        self.hand_traj_grasp = train_data["subgoal_1"]["hand_traj_grasp"]
-        
-        # self.obj_final = train_data["subgoal_1"]["obj_final"]
-        # self.hand_ref_pose = np.squeeze(train_data["subgoal_1"]["hand_ref_pose"])[3:]
-        # self.hand_ref_position = train_data["subgoal_1"]["hand_ref_position"]
-        # self.hand_contact = train_data["subgoal_1"]["hand_contact"]
+        self.obj_init = self.cur_train_data["subgoal_1"]["obj_init"]
+        self.hand_traj_reach = self.cur_train_data["subgoal_1"]["hand_traj_reach"]
+        self.hand_traj_grasp = self.cur_train_data["subgoal_1"]["hand_traj_grasp"]
 
         # set initial object pose
         pb.resetBasePositionAndOrientation(self.objId, self.obj_init[:3], self.obj_init[3:])
 
         # set initial hand pose
-        init_state = self.hand_traj_reach[10, 0]
+        init_state = self.hand_traj_reach[15, 0].copy() # make init hand pose near the object
         self.init_rot_ = Rot.from_euler('XYZ', init_state[3:6]).as_matrix()
         self.init_or_ = np.transpose(self.init_rot_)
 
@@ -217,7 +206,7 @@ class DexYCBEnv(gym.Env):
             self.actionMean_[cnt] = init_state[cnt]
         
         # set goals
-        self.set_goals(train_data)
+        self.set_goals()
         # for cnt, idx in enumerate(self.available_joints_indexes):
         #     pb.resetJointState(self.mano_id, idx, self.final_pose_world[cnt])
         # init motion_synthesis flag
@@ -229,14 +218,14 @@ class DexYCBEnv(gym.Env):
         return obs
     
 
-    def set_goals(self, train_data):
-        obj_goal_pos = train_data["subgoal_1"]["obj_init"] # not same as original code in dgrasp !!!!!!!!!!!!!!
-        ee_goal_pos = train_data["subgoal_1"]["hand_ref_position"]
-        goal_pose = train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:]
-        goal_contacts = train_data["subgoal_1"]["hand_contact"]
+    def set_goals(self):
+        obj_goal_pos = self.cur_train_data["subgoal_1"]["obj_init"] # not same as original code in dgrasp !!!!!!!!!!!!!!
+        ee_goal_pos = self.cur_train_data["subgoal_1"]["hand_ref_position"]
+        goal_pose = self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:]
+        goal_contacts = self.cur_train_data["subgoal_1"]["hand_contact"]
 
         # set final hand pose in world frame
-        self.final_pose_world = np.copy(train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
+        self.final_pose_world = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
 
         # set final object pose
         self.final_obj_pos_ = np.copy(obj_goal_pos)
@@ -258,12 +247,12 @@ class DexYCBEnv(gym.Env):
         self.final_pose_[:3] = euler_goal_pose
 
         # Compute and convert hand 3D joint positions into object relative frame
-        tmp_rel_pos = ee_goal_pos - np.tile(self.final_obj_pos_[:3], (16, 1))
+        tmp_rel_pos = ee_goal_pos - np.tile(self.final_obj_pos_[:3], (21, 1))
         self.final_ee_pos_ = Obj_orientation @ np.transpose(tmp_rel_pos)
         self.final_ee_pos_ = np.transpose(self.final_ee_pos_)
 
         # convert mano pybullet hand base translation into object relative frame
-        tmp_rel_pos = train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[:3] - self.final_obj_pos_[:3]
+        tmp_rel_pos = self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[:3] - self.final_obj_pos_[:3]
         self.final_mp_base = Obj_orientation @ np.transpose(tmp_rel_pos)
 
         # Intialize and set goal contact array
@@ -297,7 +286,7 @@ class DexYCBEnv(gym.Env):
             linkState = pb.getLinkState(self.mano_id, joint)
             position = np.array(linkState[0])
             position_list.append(position)
-        j_pos = np.array(position_list, dtype=np.float32).reshape(48)
+        j_pos = np.array(position_list, dtype=np.float32).reshape(63)
 
         # get obj pose and vel
         obj_pose = pb.getBasePositionAndOrientation(self.objId)
@@ -357,7 +346,7 @@ class DexYCBEnv(gym.Env):
         rel_obj_pose_ = rel_obj_pose_r3
 
         # Compute relative 3D position features for all hand joints
-        tmp_rel_pos = j_pos.reshape(16, 3) - np.tile(obj_position, (16, 1))
+        tmp_rel_pos = j_pos.reshape(21, 3) - np.tile(obj_position, (21, 1))
         Rel_fpos = Obj_orientation @ np.transpose(tmp_rel_pos)
         Rel_fpos = np.transpose(Rel_fpos) # compute current relative pose in object coordinates
 
@@ -367,12 +356,12 @@ class DexYCBEnv(gym.Env):
 
         obj_frame_diff_h = wrist_orientation_transpose @ np.transpose(obj_frame_diff_w)
         obj_frame_diff_h = np.transpose(obj_frame_diff_h) # convert distances to wrist frame
-        self.rel_body_pos_ = obj_frame_diff_h.reshape(48)
+        self.rel_body_pos_ = obj_frame_diff_h.reshape(63)
 
         # compute current contacts of hand parts and the contact force
         self.z_impulse = 0
         self.impulses_ = np.zeros(16)
-        for cnt, l in enumerate(self.linkToJointList):
+        for cnt, l in enumerate(self.linkList):
             if len(pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)):
                 contact = pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)
                 force = np.zeros(3)
@@ -447,9 +436,8 @@ class DexYCBEnv(gym.Env):
 
 
     def set_root_control(self):
-        self.motion_synthesis = True
-        # self.expcnt=0
         # pb.removeBody(self.plane_id)
+        self.motion_synthesis = True
 
 
     def addObject(self):
