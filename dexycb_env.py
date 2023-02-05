@@ -198,6 +198,13 @@ class DexYCBEnv(gym.Env):
 
         # set initial hand pose
         init_state = self.hand_traj_reach[15, 0].copy() # make init hand pose near the object
+
+        # add random noise
+        random_noise_pos = np.random.uniform([-0.02, -0.02, 0],[0.02, 0.02, 0], 3).copy()
+        random_noise_qpos = np.random.uniform(-0.05, 0.05, 48).copy()
+        init_state[:3] += random_noise_pos[:3]
+        init_state[3:] += random_noise_qpos
+        
         self.init_rot_ = Rot.from_euler('XYZ', init_state[3:6]).as_matrix()
         self.init_or_ = np.transpose(self.init_rot_)
 
