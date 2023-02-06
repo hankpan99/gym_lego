@@ -189,9 +189,9 @@ class DexYCBEnv(gym.Env):
         # self.cur_train_data = self.train_data[self.data_id]
         self.cur_train_data = self.train_data
 
-        self.obj_init = self.cur_train_data["subgoal_1"]["obj_init"]
-        self.hand_traj_reach = self.cur_train_data["subgoal_1"]["hand_traj_reach"]
-        self.hand_traj_grasp = self.cur_train_data["subgoal_1"]["hand_traj_grasp"]
+        self.obj_init = np.copy(self.cur_train_data["subgoal_1"]["obj_init"])
+        self.hand_traj_reach = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_reach"])
+        self.hand_traj_grasp = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"])
 
         # set initial object pose
         pb.resetBasePositionAndOrientation(self.objId, self.obj_init[:3], self.obj_init[3:])
@@ -226,10 +226,10 @@ class DexYCBEnv(gym.Env):
     
 
     def set_goals(self):
-        obj_goal_pos = self.cur_train_data["subgoal_1"]["obj_init"] # not same as original code in dgrasp !!!!!!!!!!!!!!
-        ee_goal_pos = self.cur_train_data["subgoal_1"]["hand_ref_position"]
-        goal_pose = self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:]
-        goal_contacts = self.cur_train_data["subgoal_1"]["hand_contact"]
+        obj_goal_pos = np.copy(self.cur_train_data["subgoal_1"]["obj_init"]) # not same as original code in dgrasp !!!!!!!!!!!!!!
+        ee_goal_pos = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_position"])
+        goal_pose = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:])
+        goal_contacts = np.copy(self.cur_train_data["subgoal_1"]["hand_contact"])
 
         # set final hand pose in world frame
         self.final_pose_world = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
