@@ -30,8 +30,8 @@ class DexYCBEnv(gym.Env):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
         # 6D pose of the object(6) + velocity of the wrist pose(6) + velocity of the object pose(6)
-        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 273, dtype=np.float32),
-                                                    high=np.array([100] * 273, dtype=np.float32))
+        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 276, dtype=np.float32),
+                                                    high=np.array([100] * 276, dtype=np.float32))
 
         # connect to pybullet
         if args.GUI:
@@ -126,25 +126,26 @@ class DexYCBEnv(gym.Env):
     def step(self, action):
         # wrist guidence
         # Convert final root hand translation back from (current) object into world frame
-        # obj_pose = pb.getBasePositionAndOrientation(self.objId)
-        # obj_pose = np.array(obj_pose[0] + obj_pose[1])
-        # Obj_Position = obj_pose[:3]
-        # Obj_orientation_temp = Rot.from_quat(obj_pose[3:]).as_matrix()
+        obj_pose = pb.getBasePositionAndOrientation(self.objId)
+        obj_pose = np.array(obj_pose[0] + obj_pose[1])
+        Obj_Position = obj_pose[:3]
+        Obj_orientation_temp = Rot.from_quat(obj_pose[3:]).as_matrix()
 
-        # Fpos_world = Obj_orientation_temp @ self.final_mp_base
-        # Fpos_world += Obj_Position
+        Fpos_world = Obj_orientation_temp @ self.final_mp_base
+        Fpos_world += Obj_Position
 
-        # act_pos = Fpos_world - self.hand_traj_reach[0, 0, :3] # compute distance of curent root to initial root in world frame
-        # act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
-        # self.actionMean_[:3] = act_or_pose
-
+        act_pos = Fpos_world - self.init_state[:3] # compute distance of curent root to initial root in world frame
+        act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
+        
         # Compute position target for actuators
         if True: # use predict result
             if self.motion_synthesis:
                 self.actionMean_[:6] = self.final_pose_world[:6]
                 self.actionMean_[2] += 0.1
             else:
-                self.actionMean_[:3] = self.final_pose_world[:3]
+                # self.actionMean_[:3] = self.final_pose_world[:3]
+                self.actionMean_[:3] = act_or_pose
+
             action = action * self.actionStd_ # residual action * scaling
             action += self.actionMean_ # add wrist bias (first 3DOF) and last pose (48DoF)
 
@@ -197,20 +198,28 @@ class DexYCBEnv(gym.Env):
         pb.resetBasePositionAndOrientation(self.objId, self.obj_init[:3], self.obj_init[3:])
 
         # set initial hand pose
-        init_state = self.hand_traj_reach[15, 0].copy() # make init hand pose near the object
+        self.init_state = self.hand_traj_reach[15, 0].copy() # make init hand pose near the object
 
         # add random noise
         random_noise_pos = np.random.uniform([-0.02, -0.02, 0],[0.02, 0.02, 0], 3).copy()
         random_noise_qpos = np.random.uniform(-0.05, 0.05, 48).copy()
-        init_state[:3] += random_noise_pos[:3]
-        init_state[3:] += random_noise_qpos
+        self.init_state[:3] += random_noise_pos[:3]
+        self.init_state[3:] += random_noise_qpos
         
-        self.init_rot_ = Rot.from_euler('XYZ', init_state[3:6]).as_matrix()
+        self.init_rot_ = Rot.from_euler('XYZ', self.init_state[3:6]).as_matrix()
         self.init_or_ = np.transpose(self.init_rot_)
 
+        # set mano urdf base position and orientation
+        pb.resetBasePositionAndOrientation(self.mano_id, self.init_state[:3], Rot.from_euler('XYZ', self.init_state[3:6]).as_quat())
+
+        # set joint values
         for cnt, idx in enumerate(self.available_joints_indexes):
-            pb.resetJointState(self.mano_id, idx, init_state[cnt])
-            self.actionMean_[cnt] = init_state[cnt]
+            if cnt > 5:
+                pb.resetJointState(self.mano_id, idx, self.init_state[cnt])
+                self.actionMean_[cnt] = self.init_state[cnt]
+            else:
+                pb.resetJointState(self.mano_id, idx, 0)
+                self.actionMean_[cnt] = 0
         
         # set goals
         self.set_goals()
@@ -358,7 +367,7 @@ class DexYCBEnv(gym.Env):
         Rel_fpos = np.transpose(Rel_fpos) # compute current relative pose in object coordinates
 
         obj_frame_diff = self.final_ee_pos_ - Rel_fpos # distance between target 3D positions and current 3D positions in object frame
-        obj_frame_diff_w = Obj_orientation @ np.transpose(obj_frame_diff) # convert distances to world frame
+        obj_frame_diff_w = Obj_orientation_temp @ np.transpose(obj_frame_diff) # convert distances to world frame
         obj_frame_diff_w = np.transpose(obj_frame_diff_w)
 
         obj_frame_diff_h = wrist_orientation_transpose @ np.transpose(obj_frame_diff_w)
@@ -397,7 +406,8 @@ class DexYCBEnv(gym.Env):
                         self.final_contact_array_,
                         self.impulses_,
                         self.rel_contacts_,
-                        self.rel_obj_pos_]).astype(np.float32)
+                        self.rel_obj_pos_,
+                        obj_pose_]).astype(np.float32)
         
         return obs
 
