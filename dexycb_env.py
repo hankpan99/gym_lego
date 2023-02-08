@@ -8,18 +8,18 @@ import yaml
 from scipy.spatial.transform import Rotation as Rot
 import time
 
-def quatInvQuatMul(q, p):
-    pq = np.copy(p)
+# def quatInvQuatMul(q, p):
+#     pq = np.copy(p)
 
-    q = q[[3, 0, 1, 2]]
-    p = p[[3, 0, 1, 2]]
+#     q = q[[3, 0, 1, 2]]
+#     p = p[[3, 0, 1, 2]]
 
-    pq[0] = p[0] * q[0] - p[1] * -q[1] - p[2] * -q[2] - p[3] * -q[3]
-    pq[1] = p[0] * -q[1] + p[1] * q[0] - p[2] * -q[3] + p[3] * -q[2]
-    pq[2] = p[0] * -q[2] + p[1] * -q[3] + p[2] * q[0] - p[3] * -q[1]
-    pq[3] = p[0] * -q[3] - p[1] * -q[2] + p[2] * -q[1] + p[3] * q[0]
+#     pq[0] = p[0] * q[0] - p[1] * -q[1] - p[2] * -q[2] - p[3] * -q[3]
+#     pq[1] = p[0] * -q[1] + p[1] * q[0] - p[2] * -q[3] + p[3] * -q[2]
+#     pq[2] = p[0] * -q[2] + p[1] * -q[3] + p[2] * q[0] - p[3] * -q[1]
+#     pq[3] = p[0] * -q[3] - p[1] * -q[2] + p[2] * -q[1] + p[3] * q[0]
 
-    return pq[[3, 0, 1, 2]]
+#     return pq[[3, 0, 1, 2]]
 
 class DexYCBEnv(gym.Env): 
     def __init__(self, args):
@@ -30,8 +30,8 @@ class DexYCBEnv(gym.Env):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) + lego translation(3) + lego rotation(3) = 57
         # joint angles(45) + joint angular velocities(45) + each joint forces exceeded on object(21) + 6D pose of the wrist(6) +
         # 6D pose of the object(6) + velocity of the wrist pose(6) + velocity of the object pose(6)
-        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 276, dtype=np.float32),
-                                                    high=np.array([100] * 276, dtype=np.float32))
+        self.observation_space = gym.spaces.box.Box(low=np.array([-100] * 279, dtype=np.float32),
+                                                    high=np.array([100] * 279, dtype=np.float32))
 
         # connect to pybullet
         if args.GUI:
@@ -42,10 +42,6 @@ class DexYCBEnv(gym.Env):
         pb.setTimeStep(1 / 60)
         pb.setAdditionalSearchPath(pybullet_data.getDataPath())
         pb.setGravity(0, 0, -9.8)
-
-        # set plane and table
-        # pb.loadURDF("table/table.urdf", basePosition=[0, 0, 0])
-        self.plane_id = pb.loadURDF("plane.urdf")
 
         # add mano urdf
         self.mano_id = pb.loadURDF("/manoUrdf/Leo/mano_addTips.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
@@ -104,14 +100,14 @@ class DexYCBEnv(gym.Env):
                         49,52,55]
         
         # add link friction
-        for l in self.linkToJointList:
-            pb.changeDynamics(bodyUniqueId=self.mano_id,linkIndex=l,lateralFriction=2)
+        # for l in self.linkToJointList:
+        #     pb.changeDynamics(bodyUniqueId=self.mano_id,linkIndex=l,lateralFriction=2)
 
         # add motion_synthesis flag
         self.motion_synthesis = False
         
         # add object and set object mass
-        self.obj_mass = 0.00001 # 0.05
+        self.obj_mass = 0.1 # 0.05
         self.objId = self.addObject()
 
         # arguments
@@ -140,7 +136,7 @@ class DexYCBEnv(gym.Env):
         # Compute position target for actuators
         if True: # use predict result
             if self.motion_synthesis:
-                self.actionMean_[:6] = self.final_pose_world[:6]
+                self.actionMean_[:3] = act_or_pose
                 self.actionMean_[2] += 0.1
             else:
                 # self.actionMean_[:3] = self.final_pose_world[:3]
@@ -185,6 +181,10 @@ class DexYCBEnv(gym.Env):
 
 
     def reset(self):
+        # set plane and table
+        # pb.loadURDF("table/table.urdf", basePosition=[0, 0, 0])
+        self.plane_id = pb.loadURDF("plane.urdf")
+
         self.cnt = 0
         # self.data_id = (self.data_id + 1) % 28 # ???
         # self.cur_train_data = self.train_data[self.data_id]
@@ -235,7 +235,7 @@ class DexYCBEnv(gym.Env):
     
 
     def set_goals(self):
-        obj_goal_pos = np.copy(self.cur_train_data["subgoal_1"]["obj_init"]) # not same as original code in dgrasp !!!!!!!!!!!!!!
+        obj_goal_pos = np.copy(self.cur_train_data["subgoal_1"]["obj_final"]) # not same as original code in dgrasp !!!!!!!!!!!!!!
         ee_goal_pos = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_position"])
         goal_pose = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:])
         goal_contacts = np.copy(self.cur_train_data["subgoal_1"]["hand_contact"])
@@ -335,6 +335,9 @@ class DexYCBEnv(gym.Env):
         rel_objpalm = wrist_position - obj_position
         rel_objpalm_pos = np.transpose(wrist_orientation) @ rel_objpalm
 
+        # z-distance to the table in wrist coordinates
+        rel_body_table_pos_ = np.transpose(wrist_orientation) @ np.array([0, 0, j_pos[2]])
+
         # object displacement from initial position in wrist coordinates
         rel_obj_init = self.obj_init[:3] - obj_position
         self.rel_obj_pos_ = np.transpose(wrist_orientation) @ rel_obj_init
@@ -407,6 +410,7 @@ class DexYCBEnv(gym.Env):
                         self.impulses_,
                         self.rel_contacts_,
                         self.rel_obj_pos_,
+                        rel_body_table_pos_,
                         obj_pose_]).astype(np.float32)
         
         return obs
@@ -453,8 +457,9 @@ class DexYCBEnv(gym.Env):
 
 
     def set_root_control(self):
-        # pb.removeBody(self.plane_id)
-        self.motion_synthesis = True
+        print('set root control')
+        pb.removeBody(self.plane_id)
+        # self.motion_synthesis = True
 
 
     def addObject(self):
