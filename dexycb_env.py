@@ -268,7 +268,7 @@ class DexYCBEnv(gym.Env):
         self.final_ee_pos_ = np.transpose(self.final_ee_pos_)
 
         # convert mano pybullet hand base translation into object relative frame
-        tmp_rel_pos = self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[:3] - self.final_obj_pos_[:3]
+        tmp_rel_pos = self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[:3] - self.obj_init[:3]
         self.final_mp_base = Obj_orientation @ np.transpose(tmp_rel_pos)
 
         # Intialize and set goal contact array
