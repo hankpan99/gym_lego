@@ -120,28 +120,27 @@ class DexYCBEnv(gym.Env):
         # self.data_id = 0
 
     def step(self, action):
-        # wrist guidence
-        # Convert final root hand translation back from (current) object into world frame
-        obj_pose = pb.getBasePositionAndOrientation(self.objId)
-        obj_pose = np.array(obj_pose[0] + obj_pose[1])
-        Obj_Position = obj_pose[:3]
-        Obj_orientation_temp = Rot.from_quat(obj_pose[3:]).as_matrix()
-
-        Fpos_world = Obj_orientation_temp @ self.final_mp_base
-        Fpos_world += Obj_Position
-
-        act_pos = Fpos_world - self.init_state[:3] # compute distance of curent root to initial root in world frame
-        act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
-        
-        # Compute position target for actuators
         if True: # use predict result
             if self.motion_synthesis:
-                self.actionMean_[:3] = act_or_pose
-                self.actionMean_[2] += 0.1
+                mp_final_world = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"][42, 0].reshape(51)[:3])
+                act_pos = mp_final_world - self.init_state[:3]
+                act_or_pose = self.init_or_ @ act_pos
             else:
-                # self.actionMean_[:3] = self.final_pose_world[:3]
-                self.actionMean_[:3] = act_or_pose
+                # Convert final root hand translation back from (current) object into world frame
+                obj_pose = pb.getBasePositionAndOrientation(self.objId)
+                obj_pose = np.array(obj_pose[0] + obj_pose[1])
+                Obj_Position = obj_pose[:3]
+                Obj_orientation_temp = Rot.from_quat(obj_pose[3:]).as_matrix()
 
+                Fpos_world = Obj_orientation_temp @ self.final_mp_base
+                Fpos_world += Obj_Position
+
+                act_pos = Fpos_world - self.init_state[:3] # compute distance of curent root to initial root in world frame
+                act_or_pose = self.init_or_ @ act_pos # rotate the world coordinate into hand's origin frame (from the start of the episode)
+            
+            self.actionMean_[:3] = act_or_pose
+
+            # Compute position target for actuators
             action = action * self.actionStd_ # residual action * scaling
             action += self.actionMean_ # add wrist bias (first 3DOF) and last pose (48DoF)
 
@@ -457,9 +456,7 @@ class DexYCBEnv(gym.Env):
 
 
     def set_root_control(self):
-        print('set root control')
-        pb.removeBody(self.plane_id)
-        # self.motion_synthesis = True
+        self.motion_synthesis = True
 
 
     def addObject(self):
