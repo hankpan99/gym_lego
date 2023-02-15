@@ -44,7 +44,7 @@ class DexYCBEnv(gym.Env):
         pb.setGravity(0, 0, -9.8)
 
         # add mano urdf
-        self.mano_id = pb.loadURDF("/manoUrdf/Leo/mano_addTips.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
+        self.mano_id = pb.loadURDF("/manoUrdf/20200709-subject-01_right/mano_addTips.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
         self.available_joints_indexes = [i for i in range(pb.getNumJoints(self.mano_id)) if pb.getJointInfo(self.mano_id, i)[2] != pb.JOINT_FIXED]
         
         # reset hand pose and enable forcetorquesensor
