@@ -8,19 +8,6 @@ import yaml
 from scipy.spatial.transform import Rotation as Rot
 import time
 
-# def quatInvQuatMul(q, p):
-#     pq = np.copy(p)
-
-#     q = q[[3, 0, 1, 2]]
-#     p = p[[3, 0, 1, 2]]
-
-#     pq[0] = p[0] * q[0] - p[1] * -q[1] - p[2] * -q[2] - p[3] * -q[3]
-#     pq[1] = p[0] * -q[1] + p[1] * q[0] - p[2] * -q[3] + p[3] * -q[2]
-#     pq[2] = p[0] * -q[2] + p[1] * -q[3] + p[2] * q[0] - p[3] * -q[1]
-#     pq[3] = p[0] * -q[3] - p[1] * -q[2] + p[2] * -q[1] + p[3] * q[0]
-
-#     return pq[[3, 0, 1, 2]]
-
 class DexYCBEnv(gym.Env): 
     def __init__(self, args):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) = 51
@@ -114,10 +101,10 @@ class DexYCBEnv(gym.Env):
         self.args = args
 
         # training data
-        with(open("./dexycb_data_all.pickle", "rb")) as openfile:
-            self.train_data = pickle.load(openfile)[0]
+        self.data_id = 0
+        with open("./dexycb_data_all.pickle", "rb") as openfile:
+            self.train_data = pickle.load(openfile)
 
-        # self.data_id = 0
 
     def step(self, action):
         if True: # use predict result
@@ -170,10 +157,10 @@ class DexYCBEnv(gym.Env):
 
         reward = self.getReward()
 
-        if self.cnt == 300:
+        if self.step_cnt == 60:
             done = True
         else:
-            self.cnt += 1
+            self.step_cnt += 1
             done = False
         
         return obs, reward, done, {}
@@ -184,10 +171,9 @@ class DexYCBEnv(gym.Env):
         # pb.loadURDF("table/table.urdf", basePosition=[0, 0, 0])
         self.plane_id = pb.loadURDF("plane.urdf")
 
-        self.cnt = 0
-        # self.data_id = (self.data_id + 1) % 28 # ???
-        # self.cur_train_data = self.train_data[self.data_id]
-        self.cur_train_data = self.train_data
+        self.step_cnt = 0
+        self.data_id = (self.data_id + 1) % 21
+        self.cur_train_data = self.train_data[self.data_id]
 
         self.obj_init = np.copy(self.cur_train_data["subgoal_1"]["obj_init"])
         self.hand_traj_reach = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_reach"])
@@ -197,7 +183,7 @@ class DexYCBEnv(gym.Env):
         pb.resetBasePositionAndOrientation(self.objId, self.obj_init[:3], self.obj_init[3:])
 
         # set initial hand pose
-        self.init_state = self.hand_traj_reach[15, 0].copy() # make init hand pose near the object
+        self.init_state = self.hand_traj_reach[0, 0].copy() # make init hand pose near the object
 
         # add random noise
         random_noise_pos = np.random.uniform([-0.02, -0.02, 0],[0.02, 0.02, 0], 3).copy()
