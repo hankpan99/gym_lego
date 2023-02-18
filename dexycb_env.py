@@ -109,7 +109,7 @@ class DexYCBEnv(gym.Env):
     def step(self, action):
         if True: # use predict result
             if self.motion_synthesis:
-                mp_final_world = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"][42, 0].reshape(51)[:3])
+                mp_final_world = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"][-1, 0].reshape(51)[:3])
                 act_pos = mp_final_world - self.init_state[:3]
                 act_or_pose = self.init_or_ @ act_pos
             else:
