@@ -30,6 +30,10 @@ class DexYCBEnv(gym.Env):
         pb.setAdditionalSearchPath(pybullet_data.getDataPath())
         pb.setGravity(0, 0, -9.8)
 
+        # set plane and table
+        # pb.loadURDF("table/table.urdf", basePosition=[0, 0, 0])
+        self.plane_id = pb.loadURDF("plane.urdf")
+
         # add mano urdf
         self.mano_id = pb.loadURDF("/manoUrdf/20200709-subject-01_right/mano_addTips.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
         self.available_joints_indexes = [i for i in range(pb.getNumJoints(self.mano_id)) if pb.getJointInfo(self.mano_id, i)[2] != pb.JOINT_FIXED]
@@ -156,23 +160,14 @@ class DexYCBEnv(gym.Env):
             self.actionMean_[i] = pb.getJointState(self.mano_id,self.available_joints_indexes[i])[0]
 
         reward = self.getReward()
-
-        if self.step_cnt == 60:
-            done = True
-        else:
-            self.step_cnt += 1
-            done = False
         
-        return obs, reward, done, {}
+        return obs, reward, False, {}
 
 
     def reset(self):
-        # set plane and table
-        # pb.loadURDF("table/table.urdf", basePosition=[0, 0, 0])
-        self.plane_id = pb.loadURDF("plane.urdf")
-
         self.step_cnt = 0
-        self.data_id = (self.data_id + 1) % 21
+        # self.data_id = (self.data_id + 1) % 21
+        self.data_id = np.random.randint(21)
         self.cur_train_data = self.train_data[self.data_id]
 
         self.obj_init = np.copy(self.cur_train_data["subgoal_1"]["obj_init"])
@@ -208,8 +203,7 @@ class DexYCBEnv(gym.Env):
         
         # set goals
         self.set_goals()
-        # for cnt, idx in enumerate(self.available_joints_indexes):
-        #     pb.resetJointState(self.mano_id, idx, self.final_pose_world[cnt])
+        
         # init motion_synthesis flag
         self.motion_synthesis = False
 
