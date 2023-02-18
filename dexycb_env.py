@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation as Rot
 import time
 
 class DexYCBEnv(gym.Env): 
-    def __init__(self, args):
+    def __init__(self, args, random_noise):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) = 51
         self.action_space = gym.spaces.box.Box(low=np.array([-1] * 3 + [-np.pi / 2] * 48, dtype=np.float32),
                                                 high=np.array([1] * 3 + [np.pi / 2] * 48, dtype=np.float32))
@@ -103,6 +103,8 @@ class DexYCBEnv(gym.Env):
 
         # arguments
         self.args = args
+        self.random_noise_pos = random_noise[0]
+        self.random_noise_qpos = random_noise[1]
 
         # training data
         self.data_id = 0
@@ -181,10 +183,8 @@ class DexYCBEnv(gym.Env):
         self.init_state = self.hand_traj_reach[0, 0].copy() # make init hand pose near the object
 
         # add random noise
-        random_noise_pos = np.random.uniform([-0.02, -0.02, 0],[0.02, 0.02, 0], 3).copy()
-        random_noise_qpos = np.random.uniform(-0.05, 0.05, 48).copy()
-        self.init_state[:3] += random_noise_pos[:3]
-        self.init_state[3:] += random_noise_qpos
+        self.init_state[:3] += self.random_noise_pos[:3]
+        self.init_state[3:] += self.random_noise_qpos
         
         self.init_rot_ = Rot.from_euler('XYZ', self.init_state[3:6]).as_matrix()
         self.init_or_ = np.transpose(self.init_rot_)
