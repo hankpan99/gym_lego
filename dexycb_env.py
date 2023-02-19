@@ -441,19 +441,19 @@ class DexYCBEnv(gym.Env):
 
     def addObject(self):
         meshScale = np.array([1, 1, 1])
-        visualShapeId = pb.createVisualShape(shapeType=pb.GEOM_MESH,
-                                            fileName="/home/hcis-s12/Lego_Assembly/Dataset/DexYCB/dex-ycb-20210415/models/002_master_chef_can/textured_simple.obj",
-                                            rgbaColor=[0, 0, 1],
-                                            meshScale=meshScale)
-        collisionShapeId = pb.createCollisionShape(shapeType=pb.GEOM_MESH,
-                                                fileName="/home/hcis-s12/Lego_Assembly/Dataset/DexYCB/dex-ycb-20210415/models/002_master_chef_can/textured_simple.obj",
-                                                meshScale=meshScale)
-        meshId = pb.createMultiBody(
-            self.obj_mass,
-            baseCollisionShapeIndex=collisionShapeId,
-            baseVisualShapeIndex=visualShapeId,
-            basePosition=[0, 0, 0],
-            baseOrientation=[0, 0, 0, 1]
-        )
+        visualShapeId = pb.createVisualShape(shapeType=pb.GEOM_CYLINDER,
+                                             radius=0.102289 / 2,
+                                             length=0.140144,
+                                             rgbaColor=[0, 0, 1, 1],
+                                             meshScale=meshScale)
+        collisionShapeId = pb.createCollisionShape(shapeType=pb.GEOM_CYLINDER,
+                                                   radius=0.102289 / 2,
+                                                   height=0.140144,
+                                                   meshScale=meshScale)
+        meshId = pb.createMultiBody(self.obj_mass,
+                                    baseCollisionShapeIndex=collisionShapeId,
+                                    baseVisualShapeIndex=visualShapeId,
+                                    basePosition=[0, 0, 0.140144 / 2],
+                                    baseOrientation=[0, 0, 0])
 
         return meshId
