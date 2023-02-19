@@ -9,7 +9,7 @@ from scipy.spatial.transform import Rotation as Rot
 import time
 
 class DexYCBEnv(gym.Env): 
-    def __init__(self, args, random_noise):
+    def __init__(self, args, random_noise, max_steps):
         # wrist translation(3) + wrist rotation(3) + joint rotation(45) = 51
         self.action_space = gym.spaces.box.Box(low=np.array([-1] * 3 + [-np.pi / 2] * 48, dtype=np.float32),
                                                 high=np.array([1] * 3 + [np.pi / 2] * 48, dtype=np.float32))
@@ -105,6 +105,7 @@ class DexYCBEnv(gym.Env):
         self.args = args
         self.random_noise_pos = random_noise[0]
         self.random_noise_qpos = random_noise[1]
+        self.max_steps = max_steps
 
         # training data
         self.data_id = 0
@@ -163,7 +164,19 @@ class DexYCBEnv(gym.Env):
 
         reward = self.getReward()
         
-        return obs, reward, False, {}
+        done = self.check_is_terminated()
+        
+        return obs, reward, done, {}
+    
+
+    def check_is_terminated(self):
+        if self.step_cnt == self.max_steps:
+            done = True
+        else:
+            done = False
+            self.step_cnt += 1
+
+        return done
 
 
     def reset(self):
