@@ -116,7 +116,9 @@ class DexYCBEnv(gym.Env):
     def step(self, action):
         if True: # use predict result
             if self.motion_synthesis:
-                mp_final_world = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"][-1, 0].reshape(51)[:3])
+                self.step_cnt += 1
+                traj_id = min((self.step_cnt - 60) // 10, self.cur_train_data["subgoal_1"]["hand_traj_grasp"].shape[0] - 1)
+                mp_final_world = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"][traj_id, 0].reshape(51)[:3])
                 act_pos = mp_final_world - self.init_state[:3]
                 act_or_pose = self.init_or_ @ act_pos
             else:
@@ -144,8 +146,7 @@ class DexYCBEnv(gym.Env):
             pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
                                         jointIndices=self.available_joints_indexes,
                                         controlMode=pb.POSITION_CONTROL,
-                                        targetPositions=action_clipped,
-                                        forces=[5] * 51)
+                                        targetPositions=action_clipped)
         else:
             pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
                                         jointIndices=self.available_joints_indexes,
@@ -229,7 +230,7 @@ class DexYCBEnv(gym.Env):
     def set_goals(self):
         obj_goal_pos = np.copy(self.cur_train_data["subgoal_1"]["obj_final"]) # not same as original code in dgrasp !!!!!!!!!!!!!!
         ee_goal_pos = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_position"])
-        goal_pose = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51)[3:])
+        goal_pose = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"][-1, 0].reshape(51)[3:])
         goal_contacts = np.copy(self.cur_train_data["subgoal_1"]["hand_contact"])
 
         # set final hand pose in world frame
