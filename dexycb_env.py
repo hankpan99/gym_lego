@@ -79,19 +79,19 @@ class DexYCBEnv(gym.Env):
         self.finger_weights_ *= 63
 
         # create link to joint list
-        self.linkToJointList = [6,9,12,15,16,
-                                19,22,25,26,
-                                29,32,35,36,
-                                39,42,45,46,
-                                49,52,55,56]
-        self.linkList = [6,9,12,15,
-                        19,22,25,
-                        29,32,35,
-                        39,42,45,
-                        49,52,55]
+        self.jointid_list = [6, 9, 12, 15, 16,
+                             19, 22, 25, 26,
+                             29, 32, 35, 36,
+                             39, 42, 45, 46,
+                             49, 52, 55, 56]
+        self.linkid_list = [6, 9, 12, 15,
+                            18, 21, 24,
+                            27, 30, 33,
+                            36, 39, 42,
+                            45, 48, 51]
         
         # add link friction
-        # for l in self.linkToJointList:
+        # for l in self.jointid_list:
         #     pb.changeDynamics(bodyUniqueId=self.mano_id,linkIndex=l,lateralFriction=2)
 
         # add motion_synthesis flag
@@ -291,7 +291,7 @@ class DexYCBEnv(gym.Env):
         
         # get hand joint position
         position_list = []
-        for cnt, joint in enumerate(self.linkToJointList):
+        for cnt, joint in enumerate(self.jointid_list):
             linkState = pb.getLinkState(self.mano_id, joint)
             position = np.array(linkState[0])
             position_list.append(position)
@@ -373,7 +373,7 @@ class DexYCBEnv(gym.Env):
         # compute current contacts of hand parts and the contact force
         self.z_impulse = 0
         self.impulses_ = np.zeros(16)
-        for cnt, l in enumerate(self.linkList):
+        for cnt, l in enumerate(self.linkid_list):
             if len(pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)):
                 contact = pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)
                 force = np.zeros(3)
