@@ -167,7 +167,7 @@ class DexYCBEnv(gym.Env):
         
         done = self.check_is_terminated()
         
-        return obs, reward, done, {}
+        return obs, reward, done, {'terminal_observation': obs, 'TimeLimit.truncated': True}
     
 
     def check_is_terminated(self):
@@ -181,7 +181,7 @@ class DexYCBEnv(gym.Env):
 
 
     def reset(self):
-        self.step_cnt = 0
+        self.step_cnt = 1
         # self.data_id = (self.data_id + 1) % 21
         self.data_id = np.random.randint(21)
         self.cur_train_data = self.train_data[self.data_id]
