@@ -371,20 +371,20 @@ class DexYCBEnv(gym.Env):
         self.rel_body_pos_ = obj_frame_diff_h.reshape(63)
 
         # compute current contacts of hand parts and the contact force
-        self.z_impulse = 0
         self.impulses_ = np.zeros(16)
         for cnt, l in enumerate(self.linkid_list):
-            if len(pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)):
-                contact = pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)
-                force = np.zeros(3)
+            contact = pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)
+
+            if len(contact):
+                tmp_impulse = np.zeros(3)
                 for c in contact:
-                    contact_normal = np.array(c[7])
+                    contact_vector = np.array(c[5]) - np.array(c[6])
+                    contact_unit_vector = contact_vector / np.linalg.norm(contact_vector)
                     contact_force = np.array(c[9])
-                    force += (contact_force * contact_normal)
-                # self.z_impulse += force[2]
-                # if force[2] > 0:
-                #     force.fill(0)
-                self.impulses_[cnt] = np.linalg.norm(force)
+                    
+                    tmp_impulse += (contact_force * contact_unit_vector) * (1 / 60)
+                
+                self.impulses_[cnt] = np.linalg.norm(tmp_impulse)
         
         # compute relative target contact vector, i.e., which goal contacts are currently in contact
         self.rel_contacts_ = self.final_contact_array_ * (self.impulses_ > 0)
