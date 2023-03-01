@@ -91,8 +91,8 @@ class DexYCBEnv(gym.Env):
                             45, 48, 51]
         
         # add link friction
-        # for l in self.jointid_list:
-        #     pb.changeDynamics(bodyUniqueId=self.mano_id,linkIndex=l,lateralFriction=2)
+        for l in self.linkid_list:
+            pb.changeDynamics(bodyUniqueId=self.mano_id, linkIndex=l, lateralFriction=0.8)
 
         # add motion_synthesis flag
         self.motion_synthesis = False
@@ -469,5 +469,7 @@ class DexYCBEnv(gym.Env):
                                     baseVisualShapeIndex=visualShapeId,
                                     basePosition=[0, 0, 0.140144 / 2],
                                     baseOrientation=[0, 0, 0])
+
+        pb.changeDynamics(bodyUniqueId=meshId, linkIndex=-1, lateralFriction=0.8)
 
         return meshId

@@ -92,14 +92,13 @@ def main():
                 tensorboard_log=log_dir,
                 device=device)
     iters = 0
-    log_step_cnt = 50
+    log_step_cnt = 200
 
     while True:
         model.learn(total_timesteps=total_steps * log_step_cnt,
                     reset_num_timesteps=False)
         
-        if iters % log_step_cnt == 0:
-            model.save(f"{models_dir}/{iters}")
+        model.save(f"{models_dir}/full_{iters * log_step_cnt}")
         
         iters += 1
 
