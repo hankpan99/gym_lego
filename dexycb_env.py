@@ -7,6 +7,7 @@ import numpy as np
 import yaml
 from scipy.spatial.transform import Rotation as Rot
 import time
+import random
 
 class DexYCBEnv(gym.Env): 
     def __init__(self, args, random_noise, max_steps):
@@ -33,6 +34,7 @@ class DexYCBEnv(gym.Env):
         # set plane and table
         # pb.loadURDF("table/table.urdf", basePosition=[0, 0, 0])
         self.plane_id = pb.loadURDF("plane.urdf")
+        pb.changeDynamics(bodyUniqueId=self.plane_id, linkIndex=-1, lateralFriction=0.8)
 
         # add mano urdf
         self.mano_id = pb.loadURDF("/manoUrdf/20200709-subject-01_right/mano_addTips.urdf", [0, 0, 0], pb.getQuaternionFromEuler([0, 0, 0]))
@@ -182,13 +184,18 @@ class DexYCBEnv(gym.Env):
 
     def reset(self):
         self.step_cnt = 1
-        # self.data_id = (self.data_id + 1) % 21
+        # self.data_id = (self.data_id + 1) % 8
         self.data_id = np.random.randint(21)
+        # tmp_list = [0, 2, 6, 10, 12, 14, 15, 20]
+        # self.data_id = random.choice([0, 12, 14, 15])
         self.cur_train_data = self.train_data[self.data_id]
 
         self.obj_init = np.copy(self.cur_train_data["subgoal_1"]["obj_init"])
         self.hand_traj_reach = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_reach"])
         self.hand_traj_grasp = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"])
+
+        # set initial plane pose
+        pb.resetBasePositionAndOrientation(self.plane_id, [0, 0, 0], [0, 0, 0, 1])
 
         # set initial object pose
         pb.resetBasePositionAndOrientation(self.objId, self.obj_init[:3], self.obj_init[3:])
@@ -382,10 +389,10 @@ class DexYCBEnv(gym.Env):
                     contact_unit_vector = contact_vector / np.linalg.norm(contact_vector)
                     contact_force = np.array(c[9])
                     
-                    tmp_impulse += (contact_force * contact_unit_vector) * (1 / 60)
+                    tmp_impulse += (contact_force * contact_unit_vector)
                 
                 self.impulses_[cnt] = np.linalg.norm(tmp_impulse)
-        
+
         # compute relative target contact vector, i.e., which goal contacts are currently in contact
         self.rel_contacts_ = self.final_contact_array_ * (self.impulses_ > 0)
 
@@ -451,6 +458,7 @@ class DexYCBEnv(gym.Env):
 
     def set_root_control(self):
         self.motion_synthesis = True
+        # pb.resetBasePositionAndOrientation(self.plane_id, [0, 0, -0.3], [0, 0, 0, 1])
 
 
     def addObject(self):
