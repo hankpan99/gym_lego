@@ -87,10 +87,10 @@ class DexYCBEnv(gym.Env):
                              39, 42, 45, 46,
                              49, 52, 55, 56]
         self.linkid_list = [6, 9, 12, 15,
-                            18, 21, 24,
-                            27, 30, 33,
-                            36, 39, 42,
-                            45, 48, 51]
+                            19, 22, 25,
+                            29, 32, 35,
+                            39, 42, 45,
+                            49, 52, 55]
         
         # add link friction
         for l in self.linkid_list:
@@ -395,6 +395,11 @@ class DexYCBEnv(gym.Env):
 
         # compute relative target contact vector, i.e., which goal contacts are currently in contact
         self.rel_contacts_ = self.final_contact_array_ * (self.impulses_ > 0)
+
+        # print(self.impulses_)
+        # print(self.rel_contacts_)
+        # print(self.final_contact_array_)
+        # print()
 
         # add all features to observation
         obs = np.hstack([j[:51],
