@@ -175,6 +175,8 @@ class DexYCBEnv(gym.Env):
     def check_is_terminated(self):
         if self.step_cnt == self.max_steps:
             done = True
+            # time.sleep(5)
+            # self.step_cnt += 1
         else:
             done = False
             self.step_cnt += 1
@@ -184,10 +186,7 @@ class DexYCBEnv(gym.Env):
 
     def reset(self):
         self.step_cnt = 1
-        # self.data_id = (self.data_id + 1) % 8
-        self.data_id = np.random.randint(21)
-        # tmp_list = [0, 2, 6, 10, 12, 14, 15, 20]
-        # self.data_id = random.choice([0, 12, 14, 15])
+        self.data_id = np.random.choice([0, 2, 6, 10, 12, 14, 15, 20])
         self.cur_train_data = self.train_data[self.data_id]
 
         self.obj_init = np.copy(self.cur_train_data["subgoal_1"]["obj_init"])
@@ -379,10 +378,12 @@ class DexYCBEnv(gym.Env):
 
         # compute current contacts of hand parts and the contact force
         self.impulses_ = np.zeros(16)
+        contact_points_cnt = np.zeros(16)
         for cnt, l in enumerate(self.linkid_list):
             contact = pb.getContactPoints(bodyA=self.mano_id, bodyB=self.objId, linkIndexA=l)
 
             if len(contact):
+                contact_points_cnt[cnt] = len(contact)
                 tmp_impulse = np.zeros(3)
                 for c in contact:
                     contact_vector = np.array(c[5]) - np.array(c[6])
@@ -397,6 +398,7 @@ class DexYCBEnv(gym.Env):
         self.rel_contacts_ = self.final_contact_array_ * (self.impulses_ > 0)
 
         # print(self.impulses_)
+        # print(contact_points_cnt)
         # print(self.rel_contacts_)
         # print(self.final_contact_array_)
         # print()
@@ -486,3 +488,7 @@ class DexYCBEnv(gym.Env):
         pb.changeDynamics(bodyUniqueId=meshId, linkIndex=-1, lateralFriction=0.8)
 
         return meshId
+
+
+    def seed(self, s):
+        np.random.seed(s)
