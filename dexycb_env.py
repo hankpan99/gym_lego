@@ -27,7 +27,8 @@ class DexYCBEnv(gym.Env):
         else:
             pb.connect(pb.DIRECT)
 
-        pb.setTimeStep(1 / 60)
+        self.pb_time_step = 1 / 60
+        pb.setTimeStep(self.pb_time_step)
         pb.setAdditionalSearchPath(pybullet_data.getDataPath())
         pb.setGravity(0, 0, -9.8)
 
@@ -146,9 +147,9 @@ class DexYCBEnv(gym.Env):
             action_clipped = np.minimum(np.maximum(action, self.joint_limit_low), self.joint_limit_high)
 
             pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
-                                        jointIndices=self.available_joints_indexes,
-                                        controlMode=pb.POSITION_CONTROL,
-                                        targetPositions=action_clipped)
+                                         jointIndices=self.available_joints_indexes,
+                                         controlMode=pb.POSITION_CONTROL,
+                                         targetPositions=action_clipped)
         else:
             pb.setJointMotorControlArray(bodyUniqueId=self.mano_id,
                                         jointIndices=self.available_joints_indexes,
@@ -157,7 +158,7 @@ class DexYCBEnv(gym.Env):
                                         forces=[5] * 51)
 
         pb.stepSimulation()
-        time.sleep(1/60)
+        time.sleep(self.pb_time_step)
         
         obs = self.getObservation()
         
@@ -186,8 +187,10 @@ class DexYCBEnv(gym.Env):
 
     def reset(self):
         self.step_cnt = 1
-        self.data_id = np.random.choice([0, 2, 6, 10, 12, 14, 15, 20])
-        self.cur_train_data = self.train_data[self.data_id]
+        # self.data_id = np.random.choice([0, 12, 14, 15]) # [0, 2, 6, 10, 12, 14, 15, 20]
+        # self.cur_train_data = self.train_data[self.data_id]
+        tmp_list = [0, 12, 14, 15]
+        self.cur_train_data = self.train_data[tmp_list[self.data_id]]
 
         self.obj_init = np.copy(self.cur_train_data["subgoal_1"]["obj_init"])
         self.hand_traj_reach = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_reach"])
@@ -492,3 +495,4 @@ class DexYCBEnv(gym.Env):
 
     def seed(self, s):
         np.random.seed(s)
+        self.data_id = s % 4
