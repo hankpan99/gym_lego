@@ -187,9 +187,9 @@ class DexYCBEnv(gym.Env):
 
     def reset(self):
         self.step_cnt = 1
-        # self.data_id = np.random.choice([0, 12, 14, 15]) # [0, 2, 6, 10, 12, 14, 15, 20]
+        # self.data_id = np.random.choice([12, 14, 15]) # [0, 2, 6, 10, 12, 14, 15, 20]
         # self.cur_train_data = self.train_data[self.data_id]
-        tmp_list = [0, 12, 14, 15]
+        tmp_list = [12, 14, 15]
         self.cur_train_data = self.train_data[tmp_list[self.data_id]]
 
         self.obj_init = np.copy(self.cur_train_data["subgoal_1"]["obj_init"])
@@ -241,6 +241,7 @@ class DexYCBEnv(gym.Env):
         ee_goal_pos = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_position"])
         goal_pose = np.copy(self.cur_train_data["subgoal_1"]["hand_traj_grasp"][-1, 0].reshape(51)[3:])
         goal_contacts = np.copy(self.cur_train_data["subgoal_1"]["hand_contact"])
+        goal_contacts[[1, 4, 7, 10, 13]] = 0
 
         # set final hand pose in world frame
         self.final_pose_world = np.copy(self.cur_train_data["subgoal_1"]["hand_ref_pose"].reshape(51))
@@ -447,7 +448,7 @@ class DexYCBEnv(gym.Env):
         rewards += 2.0 * max(-10.0, pos_reward_) # pos_reward
         rewards += 0.1 * max(-10.0, pose_reward_) # pose_reward
         rewards += 1.0 * max(-10.0, contact_reward_) # contact_reward
-        rewards += 2.0 * min(impulse_reward_, self.obj_mass) # impulse_reward
+        rewards += 2.0 * min(impulse_reward_, 5 * self.obj_mass) # impulse_reward
         rewards += -1.0 * max(0.0, rel_obj_reward_) # rel_obj_reward_
         rewards += -0.5 * max(0.0, body_vel_reward_) # body_vel_reward_
         rewards += -0.5 * max(0.0, body_qvel_reward_) # body_qvel_reward_
@@ -456,7 +457,7 @@ class DexYCBEnv(gym.Env):
         # print("pos_reward:",2.0 * max(-10.0, pos_reward_))
         # print("pose_reward:",0.2 * max(-10.0, pose_reward_))
         # print("contact_reward:",0.2 * max(-10.0, contact_reward_))
-        # print("impulse_reward:",1.0 * min(impulse_reward_, self.obj_mass))
+        # print("impulse_reward:",1.0 * min(impulse_reward_, 5 * self.obj_mass))
         # print("rel_obj_reward_:",-1.0 * max(0.0, rel_obj_reward_))
         # print("body_vel_reward_:",-0.5 * max(0.0,body_vel_reward_))
         # print("body_qvel_reward_:",-0.5 * max(0.0,body_qvel_reward_))
@@ -495,4 +496,4 @@ class DexYCBEnv(gym.Env):
 
     def seed(self, s):
         np.random.seed(s)
-        self.data_id = s % 4
+        self.data_id = s % 3
